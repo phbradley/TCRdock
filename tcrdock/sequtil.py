@@ -197,6 +197,11 @@ def blosum_align(
     else:
         alignments = pairwise2.align.localds(
             seq1, seq2, scorematrix, gap_open, gap_extend)
+    # this is annoying, BioPython 1.76 these are vanilla tuples and 1.79 they are named
+    assert len(alignments[0]) == 5 # seqA, seqB, score, start, end
+    alignment = max(alignments, key=lambda x:x[2])
+    #alignment = max(alignments, key=lambda x:x.score)
+
     alignment = max(alignments, key=lambda x:x.score)
     alseq1, alseq2, score, begin, end = alignment
 
