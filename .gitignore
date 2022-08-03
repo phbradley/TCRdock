@@ -8,3 +8,4 @@ __pycache__
 *.psq
 *.ptf
 *.pto
+imgt_prot_blast_db_*fasta

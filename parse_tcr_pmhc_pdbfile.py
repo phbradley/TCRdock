@@ -30,12 +30,24 @@ for fname in args.pdbfiles:
     print('start', fname, flush=True)
     pose = tcrdock.pdblite.pose_from_pdb(fname)
     num_chains = len(pose['chains'])
-    cs = pose['chainseq'].split('/')
-    if len(cs) == 4:
-        assert args.mhc_class == 1 # MHC-I structure missing B2M
-        cs = [cs[0], None]+cs[1:]
-    assert len(cs)==5, f'pdbfile {fname} should have 4 or 5 chains, see --help message'
-    mhc_aseq, mhc_bseq, pep_seq, tcr_aseq, tcr_bseq = cs
+    if args.mhc_class==1:
+        if num_chains == 5:
+            # remove B2M
+            print(f'removing chain 2 from 5-chain MHC class I pose')
+            pose = tcrdock.pdblite.delete_chains(pose, [1]) # 0-indexed chain number
+            num_chains = len(pose['chains'])
+        else:
+            assert num_chains==4, \
+            f'MHC-I pdbfile {fname} should have 4 or 5 chains, see --help message'
+        cs = pose['chainseq'].split('/')
+        mhc_aseq, pep_seq, tcr_aseq, tcr_bseq = cs
+        mhc_bseq = None
+    else:
+        assert num_chains==5, \
+            f'MHC-II pdbfile {fname} should have 5 chains, see --help message'
+        cs = pose['chainseq'].split('/')
+        mhc_aseq, mhc_bseq, pep_seq, tcr_aseq, tcr_bseq = cs
+
     tdinfo = tcrdock.tcrdock_info.TCRdockInfo().from_sequences(
         args.organism, args.mhc_class, mhc_aseq, mhc_bseq, pep_seq, tcr_aseq, tcr_bseq)
 
@@ -48,6 +60,8 @@ for fname in args.pdbfiles:
         'pdbfile': fname,
         'organism': args.organism,
         'mhc_class': args.mhc_class,
+        'sequence': pose['sequence'],
+        'chainseq': pose['chainseq'],
         'tcrdock_info': tdinfo.to_string(),
         **dgeom.to_dict(),
         'tcr_frame_x_axis': ','.join(str(x) for x in tcr_stub['axes'][0]),
