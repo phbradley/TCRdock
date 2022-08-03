@@ -31,3 +31,16 @@ python parse_tcr_pmhc_pdbfile.py --pdbfiles examples/parsing/1qsf.pdb \
     --organism human --mhc_class 1 --out_tsvfile parse_output.tsv
 ```
 
+## Setup for AlphaFold modeling a set of TCR:pMHC complexes
+
+```
+python setup_for_alphafold.py --targets_tsvfile examples/benchmark/single_target.tsv \
+    --output_dir test_setup_single
+```
+
+or
+
+```
+python setup_for_alphafold.py --targets_tsvfile examples/benchmark/tcr_db.tsv \
+    --output_dir test_setup_full_benchmark
+```
