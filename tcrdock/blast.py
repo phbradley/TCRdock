@@ -9,23 +9,40 @@ path_to_blast_executables = Path(__file__).parents[1] / 'ncbi-blast-2.11.0+' / '
 assert isdir( path_to_blast_executables ),\
     'You need to download blast; please run download_blast.py in TCRdock/ folder'
 
-# used this command to make a blast database:
-#~/bin/blastplus/bin/makeblastdb -in mhc_pdb_chains_mouse_reps_reformat.fasta -dbtype prot
-
 blastp_exe = str(path_to_blast_executables / 'blastp')
+makeblastdb_exe = str(path_to_blast_executables / 'makeblastdb')
 
 blast_fields = ('evalue bitscore qaccver saccver pident length mismatch'
                 ' gapopen qstart qend qlen qseq sstart send slen sseq')
 
+def make_blast_dbs(fastafile, dbtype='prot'):
+    assert dbtype in ['prot','nucl']
+
+    cmd = f'{makeblastdb_exe} -in {fastafile} -dbtype {dbtype}'
+    print(cmd)
+    system(cmd)
+
+
+def check_for_blast_dbs(fastafile):
+    return exists(str(fastafile)+'.phr')
 
 def blast_sequence_and_read_hits(
         query_sequence,
-        dbfile,
+        dbfile, # str or Path
         tmpfile_prefix = '',
         evalue = 1e-3,
         num_alignments = 10000,
         verbose=False,
 ):
+    assert exists(dbfile), f'missing file for BLAST-ing against: {dbfile}'
+
+    # check for blast database files
+    if not check_for_blast_dbs(dbfile):
+        # maybe we haven't set up the blast files yet...
+        print('WARNING: missing blast db files, trying to create...')
+        make_blast_dbs(dbfile)
+        assert check_for_blast_dbs(dbfile), 'Failed to create blast db files!'
+
     tmpfile = f'{tmpfile_prefix}tmp_fasta_{random.random()}.fasta'
     out = open(tmpfile, 'w')
     out.write(f'>tmp\n{query_sequence}\n')

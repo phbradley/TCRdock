@@ -69,7 +69,7 @@ def get_mhc_core_positions_class2(
         hits = blast.blast_sequence_and_read_hits(seq, dbfile)
         hit = hits.iloc[0]
         blast_align = blast.setup_query_to_hit_map(hit)
-        print('get_mhc_core_positions_class2:', ab, hit.saccver, hit.pident)
+        #print('get_mhc_core_positions_class2:', ab, hit.saccver, hit.pident)
 
         alfas = sequtil.mhc_class_2_alfas[ab][hit.saccver]
         hitseq = alfas.replace(ALL_GENES_GAP_CHAR, '')

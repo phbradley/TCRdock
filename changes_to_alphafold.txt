@@ -1,0 +1,22 @@
+Starting from alphafold commit be37a41d6f83e4145bd4912cbe8bf6a24af80c29
+
+https://github.com/deepmind/alphafold/commit/be37a41d6f83e4145bd4912cbe8bf6a24af80c29
+
+we changed features.py so that crop_size is no longer set to num_res:
+
+diff -b -u -r /home/pbradley/gitrepos/alphafold/alphafold/model/features.py alphafold/model/features.py
+--- /home/pbradley/gitrepos/alphafold/alphafold/model/features.py	2021-11-28 07:52:48.656434000 -0800
++++ alphafold/model/features.py	2022-08-02 13:49:07.085682000 -0700
+@@ -37,8 +37,10 @@
+   if cfg.common.use_templates:
+     feature_names += cfg.common.template_features
+ 
+-  with cfg.unlocked():
+-    cfg.eval.crop_size = num_res
++  # change to make it easier to run lots of targets
++  # assumes we are setting crop_size earlier
++  #with cfg.unlocked():
++  #  cfg.eval.crop_size = num_res
+ 
+   return cfg, feature_names
+ 

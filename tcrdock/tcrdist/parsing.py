@@ -6,6 +6,7 @@ from collections import OrderedDict, Counter
 import pandas as pd
 from .basic import path_to_db
 from os import system
+from os.path import exists
 from . import translation
 from .all_genes import all_genes, gap_character
 from .genetic_code import genetic_code, reverse_genetic_code
