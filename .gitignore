@@ -1,0 +1,10 @@
+*~
+*pyc
+__pycache__
+*.fasta.pdb
+*.phr
+*.pin
+*.pot
+*.psq
+*.ptf
+*.pto

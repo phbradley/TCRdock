@@ -1,0 +1,1 @@
+{"organism":"human","mhc_class":null,"mhc_allele":"","mhc_core":[],"pep_seq":"","tcr":[["TRAV3*01","TRAJ29*01","CAVRDMNSGNTPLVF"],["TRBV6-5*01","TRBJ2-1*01","CASSYVSQNNEQFF"]],"tcr_core":[19,21,23,31,33,45,46,47,63,74,87,88,89,133,135,137,144,146,158,159,160,178,188,200,201,202],"tcr_cdrs":[[25,30],[48,55],[66,71],[89,103],[139,143],[161,166],[181,185],[202,215]],"valid":true}

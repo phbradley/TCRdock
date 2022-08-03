@@ -1,0 +1,1 @@
+{"organism":"mouse","mhc_class":null,"mhc_allele":"","mhc_core":[],"pep_seq":"","tcr":[["TRAV4D-4*02","TRAJ56*01","CAALRATGGNNKLTF"],["TRBV26*01","TRBJ2-5*01","CASSLNWSQDTQYF"]],"tcr_core":[18,20,22,29,31,43,44,45,58,69,82,83,84,131,133,135,142,144,156,157,158,177,187,200,201,202],"tcr_cdrs":[[24,28],[46,50],[61,66],[84,98],[137,141],[159,164],[180,184],[202,215]],"valid":true}

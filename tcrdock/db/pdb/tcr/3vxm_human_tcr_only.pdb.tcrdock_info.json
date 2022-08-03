@@ -1,0 +1,1 @@
+{"organism":"human","mhc_class":null,"mhc_allele":"","mhc_core":[],"pep_seq":"","tcr":[["TRAV8-3*01","TRAJ28*01","CAVGAPSGAGSYQLTF"],["TRBV4-1*01","TRBJ2-7*01","CASSPTSGIYEQYF"]],"tcr_core":[20,22,24,32,34,46,47,48,64,75,88,89,90,137,139,141,148,150,162,163,164,182,192,205,206,207],"tcr_cdrs":[[26,31],[49,56],[67,72],[90,105],[143,147],[165,170],[185,189],[207,220]],"valid":true}
