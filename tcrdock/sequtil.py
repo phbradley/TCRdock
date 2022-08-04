@@ -198,11 +198,11 @@ def blosum_align(
         alignments = pairwise2.align.localds(
             seq1, seq2, scorematrix, gap_open, gap_extend)
     # this is annoying, BioPython 1.76 these are vanilla tuples and 1.79 they are named
-    assert len(alignments[0]) == 5 # seqA, seqB, score, start, end
-    alignment = max(alignments, key=lambda x:x[2])
-    #alignment = max(alignments, key=lambda x:x.score)
-
-    alignment = max(alignments, key=lambda x:x.score)
+    try:
+        alignment = max(alignments, key=lambda x:x.score)
+    except AttributeError:
+        assert len(alignments[0]) == 5 # seqA, seqB, score, start, end
+        alignment = max(alignments, key=lambda x:x[2])
     alseq1, alseq2, score, begin, end = alignment
 
     if verbose:
@@ -1708,8 +1708,9 @@ def setup_for_alphafold(
     #assert not any(tcr_db.mhc.str.startswith('E*'))
 
     tcr_db = tcr_db.copy()
-    tcr_db['mhc_peptide'] = (tcr_db.mhc.str.replace('*','').str.replace(':','')+
-                             '_'+tcr_db.peptide)
+    tcr_db['mhc_peptide'] = (
+        tcr_db.mhc.str.replace('*','',regex=False).str.replace(':','',regex=False)+
+        '_'+tcr_db.peptide)
     if organism is not None:
         if 'organism' in tcr_db.columns:
             assert all(tcr_db.organism==organism)
