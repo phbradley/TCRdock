@@ -41,6 +41,39 @@ python setup_for_alphafold.py --targets_tsvfile examples/benchmark/single_target
 or
 
 ```
-python setup_for_alphafold.py --targets_tsvfile examples/benchmark/tcr_db.tsv \
-    --output_dir test_setup_full_benchmark
+python setup_for_alphafold.py --targets_tsvfile examples/benchmark/full_benchmark.tsv \
+    --output_dir test_setup_full_benchmark --benchmark
+```
+
+Here the `--benchmark` flag tells the script to exclude nearby templates.
+
+
+## Run AlphaFold modeling using outputs from the above setup
+
+Here `$ALPHAFOLD_DATA_DIR` should point to a folder that contains the AlphaFold
+`params/` folder.
+
+This will use the very-slightly-modified version of the `alphafold` library included
+with this repository (see `changes_to_alphafold.txt`). It should also run OK
+with any post-Nov 2021 version of
+`alphafold`, but it may not be as efficient (length changes in the targets list
+will trigger recompilation of the model). You will need to run in a Python environment
+that has the packages required by alphafold (or in the alphafold docker instance).
+If you have an older (pre-multimer) version of alphafold, try changing the variable
+`NEW_ALPHAFOLD` to `False` at the top of `predict_utils.py`.
+
+```
+python run_prediction.py --targets test_setup_single/targets.tsv \
+    --outfile_prefix test_run_single --model_names model_2_ptm \
+    --data_dir $ALPHAFOLD_DATA_DIR
+
+```
+
+or
+
+```
+python run_prediction.py --targets test_setup_full_benchmark/targets.tsv \
+    --outfile_prefix test_run_full --model_names model_2_ptm \
+    --data_dir $ALPHAFOLD_DATA_DIR
+
 ```

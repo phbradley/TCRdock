@@ -21,7 +21,7 @@ def get_stub_transform_data(
     # stub axes are stored as row vectors ie
     # x-axis vec = stub['axes'][0], y-axis vec = stub['axes'][1], etc
     R = stub2['axes'].T @ stub1['axes']
-    r = Rotation.from_matrix(R)
+    r = Rotation.from_matrix(R) # need scipy version >= 1.4 for this
     theta_n = r.as_rotvec()
     #print('theta_n:', theta_n)
 
