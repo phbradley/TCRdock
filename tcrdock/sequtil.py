@@ -659,7 +659,7 @@ def get_template_pose_and_tdinfo(pdbid, complex_type):
             info = all_template_info[TERNARY] # NOTE NOTE NOTE
             pdbfile = set(info[info.pdbid==pdbid].pdbfile)
         assert len(pdbfile) == 1
-        pdbfile = pdbfile.pop()
+        pdbfile = str(path_to_db) + '/' + pdbfile.pop()
         #print('read:', pdbfile)
         pose = pdblite.pose_from_pdb(pdbfile)
         tdifile = pdbfile+'.tcrdock_info.json'
