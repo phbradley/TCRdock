@@ -33,12 +33,13 @@ for fname in args.pdbfiles:
     if args.mhc_class==1:
         if num_chains == 5:
             # remove B2M
-            print(f'removing chain 2 from 5-chain MHC class I pose')
+            print(f'removing chain 2 from a 5-chain MHC class I pose; residue numbers '
+                  'in parsing output will not include this chain')
             pose = tcrdock.pdblite.delete_chains(pose, [1]) # 0-indexed chain number
             num_chains = len(pose['chains'])
         else:
             assert num_chains==4, \
-            f'MHC-I pdbfile {fname} should have 4 or 5 chains, see --help message'
+                f'MHC-I pdbfile {fname} should have 4 or 5 chains, see --help message'
         cs = pose['chainseq'].split('/')
         mhc_aseq, pep_seq, tcr_aseq, tcr_bseq = cs
         mhc_bseq = None
@@ -51,6 +52,7 @@ for fname in args.pdbfiles:
     tdinfo = tcrdock.tcrdock_info.TCRdockInfo().from_sequences(
         args.organism, args.mhc_class, mhc_aseq, mhc_bseq, pep_seq, tcr_aseq, tcr_bseq)
 
+    # these are the MHC and TCR reference frames (aka 'stubs')
     mhc_stub = tcrdock.mhc_util.get_mhc_stub(pose, tdinfo)
     tcr_stub = tcrdock.tcr_util.get_tcr_stub(pose, tdinfo)
 
