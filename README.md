@@ -99,8 +99,9 @@ organism, mhc_class, mhc, peptide, va, ja, cdr3a, vb, jb, cdr3b
 More explanation can be found by running `python setup_for_alphfold.py -h`
 
 The format of the targets and alignments files created by the `setup_for_alphafold.py`
-script and read by the `run_prediction.py` script are explained in the README for
-the `alphafold_finetune` repository from which that script is borrowed:
+script and read by the `run_prediction.py` script are explained in the
+[README](https://github.com/phbradley/alphafold_finetune/blob/main/README.md) for
+the `alphafold_finetune` repository (from which that script is borrowed).
 
-https://github.com/phbradley/alphafold_finetune/blob/main/README.md
+
 
