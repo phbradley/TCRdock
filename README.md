@@ -74,3 +74,33 @@ python run_prediction.py --targets test_setup_full_benchmark/targets.tsv \
     --outfile_prefix test_run_full --model_names model_2_ptm \
     --data_dir $ALPHAFOLD_DATA_DIR
 ```
+
+## Compute docking RMSDs from a TSV file with docking geometry info
+
+This will compute the matrix of docking RMSDs among the 220 ternary TCR:pMHC complex
+structures in the current template database using the info stored in the file
+`tcrdock/db/ternary_templates_v2.tsv`.
+
+```
+python compute_docking_rmsds.py --docking_geometries_tsvfile tcrdock/db/ternary_templates_v2.tsv \
+    --outfile rmsds.txt
+```
+
+# File formats and other details
+
+
+## Docking geometries
+
+## AlphaFold modeling
+
+The input TSV file for the `setup_for_alphafold.py` script should have the 10 columns
+organism, mhc_class, mhc, peptide, va, ja, cdr3a, vb, jb, cdr3b
+
+More explanation can be found by running `python setup_for_alphfold.py -h`
+
+The format of the targets and alignments files created by the `setup_for_alphafold.py`
+script and read by the `run_prediction.py` script are explained in the README for
+the `alphafold_finetune` repository from which that script is borrowed:
+
+https://github.com/phbradley/alphafold_finetune/blob/main/README.md
+

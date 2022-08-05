@@ -20,7 +20,18 @@ parser = argparse.ArgumentParser(
     jb = J-beta gene
     cdr3b = CDR3-beta sequence, starts with C, ends with the F/W/etc right before the
             GXG sequence in the J gene
-    ''',
+
+Example command lines:
+
+python setup_for_alphafold.py --targets_tsvfile examples/benchmark/single_target.tsv \\
+    --output_dir test_setup_single
+
+or
+
+python setup_for_alphafold.py --targets_tsvfile examples/benchmark/full_benchmark.tsv \\
+    --output_dir test_setup_full_benchmark --benchmark
+
+''',
     formatter_class=argparse.RawDescriptionHelpFormatter,
 )
 
