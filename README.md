@@ -14,7 +14,8 @@ This functionality is made available in a Python package (`tcrdock`) and through
 wrapper scripts as described in the examples below.
 The `tcrdock` package includes a subset of the
 TCRdist library as a submodule (`tcrdock/tcrdist`) for use during the AlphaFold
-setup process. See the 
+setup process. Refer to the source of the `compute_tcrdists.py` script for a
+simple use case.
 
 # Examples
 
@@ -98,8 +99,8 @@ python compute_docking_rmsds.py --docking_geometries_tsvfile tcrdock/db/ternary_
 ## Compute pairwise `TCRdist` values for a set of paired TCRs
 
 This will compute the matrix of paired `TCRdist` values and save it to a text file.
-It will also print out the `TCRdiv` value calculated with the sigma from the flag
---tcrdiv_sigma (default is 120)
+It will also print out the `TCRdiv` repertoire diversity measure calculated
+with the sigma from the command line flag `--tcrdiv_sigma` (the default is 120)
 
 ```
 python compute_tcrdists.py --tcrs_tsvfile examples/tcrdist/human_tcrs.tsv \
