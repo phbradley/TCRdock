@@ -4,12 +4,11 @@ Python tools for TCR:peptide-MHC modeling and analysis
 
 # Core functionality
 
+* Setup and run TCR-specialized AlphaFold simulations starting from a TSV file with
+TCR, peptide, and MHC information.
 * Parse a TCR:peptide-MHC ternary PDB structure and define V/J/CDR3, MHC allele, TCR
 and MHC coordinate frames, and TCR:pMHC docking geometry
-* Setup for running TCR-specialized AlphaFold simulations given a TSV file with TCR,
-peptide, and MHC information.
-* Run simple template-based AlphaFold simulations
-* Calculate distances between docking geometries ('docking RMSDs') for use in clustering/docking analysis
+* Calculate distances between docking geometries ('docking RMSDs') for use in clustering/docking analysis and model evaluation
 
 # Examples
 
@@ -66,7 +65,6 @@ If you have an older (pre-multimer) version of alphafold, try changing the varia
 python run_prediction.py --targets test_setup_single/targets.tsv \
     --outfile_prefix test_run_single --model_names model_2_ptm \
     --data_dir $ALPHAFOLD_DATA_DIR
-
 ```
 
 or
@@ -75,5 +73,4 @@ or
 python run_prediction.py --targets test_setup_full_benchmark/targets.tsv \
     --outfile_prefix test_run_full --model_names model_2_ptm \
     --data_dir $ALPHAFOLD_DATA_DIR
-
 ```
