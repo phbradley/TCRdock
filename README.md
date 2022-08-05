@@ -12,6 +12,8 @@ and MHC coordinate frames, and TCR:pMHC docking geometry
 
 # Examples
 
+Running any of these Python scripts with the `-h` flag should print a help mesage.
+
 ## Parse a TCR:peptide-MHC ternary structure PDB file
 
 The PDB file should just contain a single copy of the ternary structure, with the
@@ -89,14 +91,18 @@ python compute_docking_rmsds.py --docking_geometries_tsvfile tcrdock/db/ternary_
 
 # Installation
 
-The non-AlphaFold requirements are listed in `requirements.txt`. Those specific
+The non-AlphaFold Python package requirements are listed in `requirements.txt`.
+Those specific
 package versions should work, but there should also be plenty of flexibility on the
-versions. A potential installation route would be:
+versions. The TCR and MHC parsing code also requires the NCBI BLAST+ software
+to be installed, which can be done by running the script
+`download_blast.py`. A potential installation route would be:
 
 ```
 conda create --name tcrdock_test python=3.8
 source activate tcrdock_test   # or: conda activate tcrdock_test
 pip3 install -r requirements.txt
+python download_blast.py
 ```
 
 To run the AlphaFold simulations, you will need a Python environment that satisfies

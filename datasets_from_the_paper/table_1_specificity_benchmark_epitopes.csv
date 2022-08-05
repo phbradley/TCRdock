@@ -1,0 +1,9 @@
+organism,mhc,peplen,peptide,antigen
+human,HLA-A*02:01,9,GILGFVFTL,Flu M1
+human,HLA-A*02:01,9,GLCTLVAML,EBV BMLF1
+human,HLA-A*02:01,9,NLVPMVATV,CMV pp65
+human,HLA-A*02:01,9,YLQPRTFLL,SARS-CoV-2 Spike
+human,HLA-A*02:01,10,ELAGIGILTV,human MART-1
+human,HLA-A*02:01,10,KLVALGINAV,HCV POLG
+mouse,H2-Db,9,ASNENMETM,Flu NP
+mouse,H2-Db,10,SSLENFRAYV,Flu PA
