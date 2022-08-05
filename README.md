@@ -8,7 +8,13 @@ Python tools for TCR:peptide-MHC modeling and analysis
 TCR, peptide, and MHC information.
 * Parse a TCR:peptide-MHC ternary PDB structure and define V/J/CDR3, MHC allele, TCR
 and MHC coordinate frames, and TCR:pMHC docking geometry
-* Calculate distances between docking geometries ('docking RMSDs') for use in clustering/docking analysis and model evaluation
+* Calculate distances between docking geometries ('docking RMSDs') for use in clustering/docking analysis and model evaluation.
+
+This functionality is made available in a Python package (`tcrdock`) and through
+wrapper scripts as described in the examples below.
+The `tcrdock` package includes a subset of the
+TCRdist library as a submodule (`tcrdock/tcrdist`) for use during the AlphaFold
+setup process. See the 
 
 # Examples
 
@@ -87,6 +93,17 @@ structures in the current template database using the info stored in the file
 ```
 python compute_docking_rmsds.py --docking_geometries_tsvfile tcrdock/db/ternary_templates_v2.tsv \
     --outfile rmsds.txt
+```
+
+## Compute pairwise `TCRdist` values for a set of paired TCRs
+
+This will compute the matrix of paired `TCRdist` values and save it to a text file.
+It will also print out the `TCRdiv` value calculated with the sigma from the flag
+--tcrdiv_sigma (default is 120)
+
+```
+python compute_tcrdists.py --tcrs_tsvfile examples/tcrdist/human_tcrs.tsv \
+    --organism human --outfile tcrdists.txt
 ```
 
 # Installation
