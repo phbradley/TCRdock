@@ -26,10 +26,17 @@ python compute_tcrdists.py --tcrs_tsvfile examples/tcrdist/human_tcrs.tsv \\
     formatter_class=argparse.RawDescriptionHelpFormatter,
 )
 
-parser.add_argument('--tcrs_tsvfile', required=True, help='stuff')
-parser.add_argument('--organism', required=True, help='stuff')
-parser.add_argument('--tcrdiv_sigma', type=float, default = 120., help='stuff')
-parser.add_argument('--outfile', help='stuff', required=True)
+parser.add_argument('--tcrs_tsvfile', required=True,
+                    help='TSV-formatted input file with list of TCRs; see '
+                    ' --help output for details')
+parser.add_argument('--organism', required=True, choices=['mouse','human'],
+                    help='TCR source organism')
+parser.add_argument('--tcrdiv_sigma', type=float, default = 120.,
+                    help='Width of gaussian smoothing kernel used in the TCRdiv '
+                    'calculation (in TCRdist units)')
+parser.add_argument('--outfile', required=True,
+                    help='Output file where the distances will be written '
+                    '(in numpy.savetxt format)')
 
 args = parser.parse_args()
 
@@ -44,6 +51,7 @@ missing = [col for col in required_columns if col not in df.columns]
 if missing:
     print('ERROR missing some required columns in the --tcrs_tsvfile',
           missing)
+    print('try running with the --help option for formatting info')
     exit()
 
 print(f'Read {len(df)} TCRs from file {args.tcrs_tsvfile}')

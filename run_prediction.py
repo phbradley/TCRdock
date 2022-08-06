@@ -1,6 +1,6 @@
 ######################################################################################88
 
-FREDHUTCH_HACKS = True # silly stuff Phil added for running on Hutch servers
+FREDHUTCH_HACKS = False # silly stuff Phil added for running on Hutch servers
 if FREDHUTCH_HACKS:
     import os
     from shutil import which
@@ -18,16 +18,18 @@ import argparse
 
 parser = argparse.ArgumentParser(
     description="Run simple template-based alphafold inference",
-    epilog = f'''
+    epilog = f'''This script is borrowed from the original here:
+    https://github.com/phbradley/alphafold_finetune/blob/main/run_prediction.py
+
 Examples:
 
-# this command will build models and compute confidence scores for
-# all 10mer peptides in HCV_POLG77 bound to HLA-A*02:01, using the default
-# alphafold model_2_ptm parameters. You would need to change the --data_dir
-# argument to point to the location of the folder containing the alphafold
-# params/ subfolder.
+# the test_setup_single/ directory would first be made by running the
+# setup_for_alphafold.py
+# script.
 
-python3 run_prediction.py --targets examples/pmhc_hcv_polg_10mers/targets.tsv --data_dir /home/pbradley/csdat/alphafold/data/ --outfile_prefix polg_test1 --model_names model_2_ptm --ignore_identities
+python run_prediction.py --targets test_setup_single/targets.tsv \
+    --outfile_prefix test_run_single --model_names model_2_ptm \
+    --data_dir $ALPHAFOLD_DATA_DIR
 
 
     ''',
@@ -41,13 +43,17 @@ parser.add_argument('--final_outfile_prefix',
                     help='Prefix that will be prepended to the final output '
                     'tsv filename')
 parser.add_argument('--targets', required=True, help='File listing the targets to '
-                    'be modeled. See description of file format in the github '
-                    'README and also examples in the examples/*/*tsv')
+                    'be modeled. See description of file format in the README '
+                    'https://github.com/phbradley/alphafold_finetune/blob/main/README.md'
+                    "and also examples in that repo's examples/*/*tsv")
 parser.add_argument('--data_dir', help='Location of AlphaFold params/ folder')
 
 parser.add_argument('--model_names', type=str, nargs='*', default=['model_2_ptm'])
-parser.add_argument('--model_params_files', type=str, nargs='*')
 
+parser.add_argument('--model_params_files', type=str, nargs='*',
+                    help='Only needed if running with fine-tuned parameters or '
+                    'parameters in a non-default location (ie, not in the params/ '
+                    'folder in --data_dir)')
 parser.add_argument('--verbose', action='store_true')
 parser.add_argument('--ignore_identities', action='store_true',
                     help='Ignore the sequence identities column in the templates '

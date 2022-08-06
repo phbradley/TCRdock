@@ -11,12 +11,17 @@ parser = argparse.ArgumentParser(
     formatter_class=argparse.RawDescriptionHelpFormatter,
 )
 
-parser.add_argument('--out_tsvfile', required=True, help='stuff')
-parser.add_argument('--pdbfiles', nargs='*', help='stuff', required=True)
-parser.add_argument('--mhc_class', type=int, help='stuff', required=True)
-parser.add_argument('--organism', help='stuff', required=True)
+parser.add_argument('--out_tsvfile', required=True,
+                    help='The output TSV file where parsing info will be written')
+parser.add_argument('--pdbfiles', nargs='*', required=True,
+                    help='List of ternary TCR:pMHC pdbfiles to parse')
+parser.add_argument('--mhc_class', type=int, required=True, choices=[1,2],
+                    help='MHC class (1 or 2)')
+parser.add_argument('--organism', required=True, choices=['mouse','human'],
+                    help="Source organism ('mouse' or 'human')")
 
 args = parser.parse_args()
+
 
 import pandas as pd
 import tcrdock

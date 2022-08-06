@@ -11,11 +11,17 @@ and MHC coordinate frames, and TCR:pMHC docking geometry
 * Calculate distances between docking geometries ('docking RMSDs') for use in clustering/docking analysis and model evaluation.
 
 This functionality is made available in a Python package (`tcrdock`) and through
-wrapper scripts as described in the examples below.
+wrapper scripts as illustrated in the examples below.
 The `tcrdock` package includes a subset of the
 TCRdist library as a submodule (`tcrdock/tcrdist`) for use during the AlphaFold
 setup process. Refer to the source of the `compute_tcrdists.py` script for a
 simple use case.
+
+**NOTE: Input and output sequence/residue numbers are 0-indexed**:
+they start at 0 and run
+through N-1, where N is the length of the sequence. For example, the MHC and TCR
+core positions written out by `parse_tcr_pmhc_pdbfile.py` are 0-indexed with
+respect to the full ternary sequence.
 
 # Examples
 

@@ -1,3 +1,4 @@
+######################################################################################88
 import argparse
 
 required_columns = 'organism mhc_class mhc peptide va ja cdr3a vb jb cdr3b'.split()
@@ -5,7 +6,7 @@ required_columns = 'organism mhc_class mhc peptide va ja cdr3a vb jb cdr3b'.spli
 parser = argparse.ArgumentParser(
     description = "Create <output_dir>/targets.tsv file and associated input files "
     "for AlphaFold modeling with the run_alphafold_predictions.py script",
-    epilog = f'''The --targets_tsvfile argument should contain the columns
+    epilog = f'''The --targets_tsvfile file should contain the columns
 
     organism = 'mouse' or 'human'
     mhc_class = 1 or 2
@@ -21,6 +22,8 @@ parser = argparse.ArgumentParser(
     cdr3b = CDR3-beta sequence, starts with C, ends with the F/W/etc right before the
             GXG sequence in the J gene
 
+    Check out the input files in the examples below.
+
 Example command lines:
 
 python setup_for_alphafold.py --targets_tsvfile examples/benchmark/single_target.tsv \\
@@ -35,12 +38,22 @@ python setup_for_alphafold.py --targets_tsvfile examples/benchmark/full_benchmar
     formatter_class=argparse.RawDescriptionHelpFormatter,
 )
 
-parser.add_argument('--targets_tsvfile', required=True, help='stuff')
-parser.add_argument('--output_dir', help='stuff', required=True)
-parser.add_argument('--num_runs', type=int, default=3, help='stuff')
-parser.add_argument('--benchmark', action='store_true', help='stuff')
-parser.add_argument('--maintain_relative_paths', action='store_true', help='stuff')
-parser.add_argument('--exclude_pdbids_column', help='stuff')
+parser.add_argument('--targets_tsvfile', required=True,
+                    help='TSV formatted file with info on modeling targets')
+parser.add_argument('--output_dir', required=True,
+                    help='directory where the outputs will go; preferably empty '
+                    'or nonexistent (will create)')
+parser.add_argument('--num_runs', type=int, default=3,
+                    help='Number of alphafold runs per target (default is 3)')
+parser.add_argument('--benchmark', action='store_true',
+                    help='Exclude sequence-similar templates (for benchmarking)')
+parser.add_argument('--maintain_relative_paths', action='store_true',
+                    help='Keep the file paths in the targets and alignments files '
+                    'relative (assuming --output_dir is a relative path), rather '
+                    'than trying to resolve to absolute paths')
+parser.add_argument('--exclude_pdbids_column',
+                    help='Column in the --targets_tsvfile file with comma-separated '
+                    'lists of pdbfiles to exclude from modeling')
 
 args = parser.parse_args()
 
