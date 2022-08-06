@@ -20,7 +20,7 @@ def dihedral_radians( p1, p2, p3, p4 ):
     assert p2.shape == (3,)
     assert p3.shape == (3,)
     assert p4.shape == (3,)
-    # borrowed form Rosetta
+    # borrowed from Rosetta
     a = p2-p1
     a /= np.linalg.norm(a)
     b = p3-p2
@@ -53,8 +53,9 @@ class DockingGeometry():
         coordinates are defined.
         '''
         from .geom_util import global2local
+        #def global2local(stub, v):
+        #    return stub['axes'].dot(v - stub['origin'])
 
-        #assert False
         self.torsion = dihedral_radians(
             mhc_stub['origin'] + mhc_stub['axes'][1],
             mhc_stub['origin'],

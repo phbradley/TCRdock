@@ -138,6 +138,8 @@ would be to use the AlphaFold Docker container.
 
 ## Docking geometries
 
+![frames](_images/make_frames_img.png)
+
 TCR:pMHC docking geometries represent the coordinate transformation between
 the MHC and TCR reference frames. The
 `tcrdock.docking_geometry.DockingGeometry` class defined in
