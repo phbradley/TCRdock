@@ -150,7 +150,7 @@ TCR location, and the TCR X-axis points from near the TCR center of mass
 along the TCRA/TCRB symmetry axis toward the CDR3 loops and toward the
 "canonical" MHC location.
 
-The docking geometry parameters are as follows:
+The docking geometry parameters are as follows (see below for scatterplots):
 
 * d: the distance in Angstroms between the MHC and TCR coordinate frame origins.
 
@@ -191,6 +191,9 @@ if the TCR is interacting with the MHC via the constant domain.
 To see the details of the calculation, refer to the `DockingGeometry.from_stubs`
 function. Currently it's here:
 https://github.com/phbradley/TCRdock/blob/main/tcrdock/docking_geometry.py#L47
+
+Here are some scatter plots of docking geometry parameters for the 130 ternary
+structures in the TCR structure prediction benchmark.
 
 ![docking_geometries](_images/benchmark_docking_geometries.png)
 
