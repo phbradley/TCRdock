@@ -2,6 +2,9 @@
 
 Python tools for TCR:peptide-MHC modeling and analysis
 
+Described in the manuscript: "Structure-based prediction of T cell
+receptor:peptide-MHC interactions" by Philip Bradley. bioRXiv link: 
+
 # Core functionality
 
 * Set up and run TCR-specialized AlphaFold simulations starting from a TSV file with
