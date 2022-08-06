@@ -138,6 +138,60 @@ would be to use the AlphaFold Docker container.
 
 ## Docking geometries
 
+TCR:pMHC docking geometries represent the coordinate transformation between
+the MHC and TCR reference frames. The
+`tcrdock.docking_geometry.DockingGeometry` class defined in
+`tcrdock/docking_geometry.py` stores docking geometry information.
+Docking geometries are represented (internally and in parsing output)
+by 6 numbers and two booleans. The exact choice of which 6 numbers to use to
+represent this rigid body transformation is guided by the fact that
+the MHC X-axis points up toward the peptide and toward the "canonical"
+TCR location, and the TCR X-axis points from near the TCR center of mass
+along the TCRA/TCRB symmetry axis toward the CDR3 loops and toward the
+"canonical" MHC location.
+
+The docking geometry parameters are as follows:
+
+* d: the distance in Angstroms between the MHC and TCR coordinate frame origins.
+
+* torsion: the dihedral angle in radians between the MHC Y-axis and the TCR Z-axis,
+(typically around pi). Takes values in the interval [0,2*pi)
+
+* tcr_unit_y: The Y-component of the unit vector that points from MHC to TCR, in the
+MHC frame. In other words, this is the location of the TCR, written in the MHC
+coordinate frame, normalized to have length 1. This vector is usually pretty close
+to the X-axis vector, since the X-axis of the MHC frame points up from the beta sheet
+center toward the peptide, and is perpendicular to the beta sheet.
+
+* tcr_unit_z: The Z-component of the unit vector that points from MHC to TCR, in the
+MHC frame.
+
+* mhc_unit_y: The Y-component of the unit vector that points from TCR to MHC, in the
+TCR frame. In other words, this is the location of the MHC, written in the TCR
+coordinate frame, normalized to have length 1. This vector is usually pretty close
+to the X-axis vector, since the X-axis of the TCR frame points along the TCRA/TCRB
+symmetry axis toward the CDR3 loops.
+
+* mhc_unit_z: The Z-component of the unit vector that points from TCR to MHC, in the
+TCR frame.
+
+* tcr_unit_x_is_negative: boolean that tells whether the MHC--->TCR unit vector
+has a negative
+x-component. This is always `False` for canonical docking geometries.
+It would be `True` if the
+TCR is docking to the underside of the MHC beta sheet, or if the peptide is
+underneath the beta sheet (ie, whenever TCR and peptide are on opposite sides
+of the MHC beta sheet).
+
+* mhc_unit_x_is_negative: boolean that tells whether the TCR--->MHC unit vector
+has a negative x-component. This is always `False` for canonical docking geometries.
+It would be `True` if the TCR CDR3 loops are pointing away from the MHC, for example
+if the TCR is interacting with the MHC via the constant domain.
+
+To see the details of the calculation, refer to the `DockingGeometry.from_stubs`
+function. Currently it's here:
+https://github.com/phbradley/TCRdock/blob/main/tcrdock/docking_geometry.py#L47
+
 ## AlphaFold modeling
 
 The input TSV file for the `setup_for_alphafold.py` script should have the 10 columns

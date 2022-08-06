@@ -45,6 +45,13 @@ class DockingGeometry():
         return self.to_string()
 
     def from_stubs(self, mhc_stub, tcr_stub):
+        ''' stub is another word for coordinate frame (from protein folding)
+        here a stub is a dictionary with two keys:
+        'axes':3x3 orthogonal matrix with frame axes as ROW vectors
+        'origin':3d vector, the origin of the coordinate frame
+        all of those are in the global absolute reference frame in which the PDB
+        coordinates are defined.
+        '''
         from .geom_util import global2local
 
         #assert False
