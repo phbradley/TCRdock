@@ -192,6 +192,8 @@ To see the details of the calculation, refer to the `DockingGeometry.from_stubs`
 function. Currently it's here:
 https://github.com/phbradley/TCRdock/blob/main/tcrdock/docking_geometry.py#L47
 
+![docking_geometries](_images/benchmark_docking_geometries.png)
+
 ## AlphaFold modeling
 
 The input TSV file for the `setup_for_alphafold.py` script should have the 10 columns
