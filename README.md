@@ -141,7 +141,8 @@ would be to use the AlphaFold Docker container.
 ![frames](_images/make_frames_img.png)
 
 TCR:pMHC docking geometries represent the coordinate transformation between
-the MHC and TCR reference frames. The
+the MHC and TCR reference frames, which are shown as red (X-axis), green (Y-axis), and
+blue (Z-axis) arrow triplets in the above TCR:peptide-MHC structure. The
 `tcrdock.docking_geometry.DockingGeometry` class defined in
 `tcrdock/docking_geometry.py` stores docking geometry information.
 Docking geometries are represented (internally and in parsing output)
@@ -150,7 +151,7 @@ represent this rigid body transformation is guided by the fact that
 the MHC X-axis points up toward the peptide and toward the "canonical"
 TCR location, and the TCR X-axis points from near the TCR center of mass
 along the TCRA/TCRB symmetry axis toward the CDR3 loops and toward the
-"canonical" MHC location.
+"canonical" MHC location (see red arrows in image above).
 
 The docking geometry parameters are as follows (see below for scatterplots):
 
