@@ -187,12 +187,13 @@ x-component. This is always `False` for canonical docking geometries.
 It would be `True` if the
 TCR is docking to the underside of the MHC beta sheet, or if the peptide is
 underneath the beta sheet (ie, whenever TCR and peptide are on opposite sides
-of the MHC beta sheet).
+of the MHC beta sheet). Assumed to be `False` if absent from the inputs.
 
 * mhc_unit_x_is_negative: boolean that tells whether the TCR--->MHC unit vector
 has a negative x-component. This is always `False` for canonical docking geometries.
 It would be `True` if the TCR CDR3 loops are pointing away from the MHC, for example
-if the TCR is interacting with the MHC via the constant domain.
+if the TCR is interacting with the MHC via the constant domain. Assumed to be `False`
+if absent from the inputs.
 
 To see the details of the calculation, refer to the `DockingGeometry.from_stubs`
 function. Currently it's here:
@@ -208,7 +209,7 @@ structures in the TCR structure prediction benchmark.
 The input TSV file for the `setup_for_alphafold.py` script should have the 10 columns
 organism, mhc_class, mhc, peptide, va, ja, cdr3a, vb, jb, cdr3b
 
-More explanation can be found by running `python setup_for_alphfold.py -h`
+More explanation can be found by running `python setup_for_alphafold.py -h`
 
 The format of the targets and alignments files created by the `setup_for_alphafold.py`
 script and read by the `run_prediction.py` script are explained in the
