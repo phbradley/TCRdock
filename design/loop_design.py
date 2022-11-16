@@ -32,6 +32,11 @@ parser = argparse.ArgumentParser(description="alphafold loop design")
 parser.add_argument('--targets', required=True)
 parser.add_argument('--outfile_prefix', required=True)
 parser.add_argument('--extend_flex', type=int, default=1)
+parser.add_argument('--batch', type=int, help='split targets into batches of size '
+                    '--batch_size and run batch number --batch>')
+parser.add_argument('--batch_size', type=int, help='split targets into batches of size '
+                    '--batch_size and run batch number --batch>')
+parser.add_argument('--dont_sort_targets_by_length_when_batching', action='store_true')
 
 args = parser.parse_args()
 
@@ -46,26 +51,41 @@ from wrapper_tools import run_alphafold, run_mpnn
 targets = pd.read_table(args.targets)
 
 for col in required_cols:
-    assert col in targets.columns
+    assert col in targets.columns, f'Need column {col} in {args.targets}'
 
-assert targets.targetid.value_counts().max() == 1 # no duplicates
+assert targets.targetid.value_counts().max() == 1, 'Duplicates in the targetid col!'
+
+outfile_prefix = args.outfile_prefix
+if args.batch is not None:
+    assert args.batch_size is not None
+    start = args.batch * args.batch_size
+    stop = (args.batch+1) * args.batch_size
+    print('running batch=', args.batch, 'start=', start, 'stop=', stop,
+          'batch_size=', args.batch_size, 'num_targets=', targets.shape[0],
+          'num_batches=', (targets.shape[0]-1)//args.batch_size + 1)
+    if not args.dont_sort_targets_by_length_when_batching:
+        targets['nres'] = targets.chainseq.str.len() - targets.chainseq.str.count('/')
+        targets.sort_values('nres', inplace=True)
+    targets = targets[start:stop].copy()
+    outfile_prefix += f'_b{args.batch}'
+
 
 # run alphafold
-outprefix = f'{args.outfile_prefix}_afold1'
+outprefix = f'{outfile_prefix}_afold1'
 targets = run_alphafold(targets, outprefix)
 
 # run mpnn
-outprefix = f'{args.outfile_prefix}_mpnn'
+outprefix = f'{outfile_prefix}_mpnn'
 targets = run_mpnn(targets, outprefix, extend_flex=args.extend_flex)
 
 # run alphafold again
-outprefix = f'{args.outfile_prefix}_afold2'
+outprefix = f'{outfile_prefix}_afold2'
 targets = run_alphafold(targets, outprefix)
 
 # compute stats
 targets = compute_stats(targets, extend_flex=args.extend_flex)
 
 # write results
-targets.to_csv(f'{args.outfile_prefix}_final_results.tsv', sep='\t', index=False)
+targets.to_csv(f'{outfile_prefix}_final_results.tsv', sep='\t', index=False)
 
 print('DONE')

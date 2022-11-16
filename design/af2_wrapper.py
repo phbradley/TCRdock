@@ -1,18 +1,27 @@
-''' inputs are --chainseq target chainsequence (w '/'), and
---alignfile tsvfile with alignments to templates
+''' This is a wrapper around non-MSA, template-based af2
 
-alignfile has columns: template_pdbfile target_to_template_alignstring identities target_len template_len
-{and optionally transform}
+the targets file should have columns
+* targetid -- unique ID
+* chainseq -- '/'-separated target chain sequences
 
-target_to_template_alignstring is ';' separated i:j, 0-indexed
+and EITHER
+* alignfile
+OR
+* template_N_template_pdbfile [for N=0 at least and possibly 1,2,3]
+* template_N_target_to_template_alignstring [ditto]
 
-transform is R;v;positions
+
+some old help messages:
+template_N_target_to_template_alignstring is ';' separated i:j, 0-indexed
+
+transform is R;v;positions [this is optional]
 
 each of R,v, and positions are comma separated (R is ravel order, ie by rows)
 Rx+v is applied to the template coordinates at positions in positions list
 positions is 0-indexed
 
 '''
+required_cols = 'targetid chainseq'.split()
 ######################################################################################88
 import sys
 from sys import exit
@@ -39,28 +48,29 @@ import argparse
 parser = argparse.ArgumentParser(
     description="predict tcr:pmhc structure")
 
-parser.add_argument('--outfile_prefix',
-                    help='Prefix that will be prepended to the output '
-                    'filenames')
-parser.add_argument('--final_outfile_prefix',
-                    help='Prefix that will be prepended to the final output '
-                    'tsv filename')
-parser.add_argument('--targets')
-
+parser.add_argument('--targets', required=True)
+parser.add_argument('--outfile_prefix', required=True,
+                    help='Prefix that will be prepended to the output filenames')
 
 parser.add_argument('--num_recycle', type=int, default=3)
 parser.add_argument('--model_names', type=str, nargs='*', default=['model_2_ptm'])
 parser.add_argument('--add_templates_to_msa', action='store_true')
 parser.add_argument('--verbose', action='store_true')
-parser.add_argument('--allow_chainbreaks', action='store_true')
-parser.add_argument('--allow_skipped_lines', action='store_true')
-parser.add_argument('--dont_reorder_templates', action='store_true')
+parser.add_argument('--disallow_chainbreaks', action='store_true')
+parser.add_argument('--disallow_skipped_lines', action='store_true')
+parser.add_argument('--reorder_templates', action='store_true')
 parser.add_argument('--ignore_identities', action='store_true')
 parser.add_argument('--no_pdbs', action='store_true')
 parser.add_argument('--terse', action='store_true')
 parser.add_argument('--no_resample_msa', action='store_true')
 parser.add_argument('--model_params_file')
 parser.add_argument('--model_params_files', type=str, nargs='*')
+
+parser.add_argument('--batch', type=int, help='split targets into batches of size '
+                    '--batch_size and run batch number --batch>')
+parser.add_argument('--batch_size', type=int, help='split targets into batches of size '
+                    '--batch_size and run batch number --batch>')
+parser.add_argument('--dont_sort_targets_by_length_when_batching', action='store_true')
 
 args = parser.parse_args()
 
@@ -120,16 +130,28 @@ start_time = timer()
 
 
 targets = pd.read_table(args.targets)
+for col in required_cols:
+    assert col in targets.columns, f'Need {col} in {args.targets} columns'
 
-col_swaps = [
-    ('target_chainseq','chainseq'),
-    ('templates_alignfile','alignfile'),
-]
+assert ('alignfile' in targets.columns or
+        ('template_0_template_pdbfile' in targets.columns and
+         'template_0_target_to_template_alignstring' in targets.columns))
 
-for old,new in col_swaps:
-    if new not in targets.columns and old in targets.columns:
-        targets.rename(columns = {old:new}, inplace=True)
-        print('rename:', old, new)
+assert targets.targetid.value_counts().max() == 1, 'Duplicates in the targetid col!'
+
+outfile_prefix = args.outfile_prefix
+if args.batch is not None:
+    assert args.batch_size is not None
+    start = args.batch * args.batch_size
+    stop = (args.batch+1) * args.batch_size
+    print('running batch=', args.batch, 'start=', start, 'stop=', stop,
+          'batch_size=', args.batch_size, 'num_targets=', targets.shape[0],
+          'num_batches=', (targets.shape[0]-1)//args.batch_size + 1)
+    if not args.dont_sort_targets_by_length_when_batching:
+        targets['nres'] = targets.chainseq.str.len() - targets.chainseq.str.count('/')
+        targets.sort_values('nres', inplace=True)
+    targets = targets[start:stop].copy()
+    outfile_prefix += f'_b{args.batch}'
 
 
 lens = [len(x.chainseq.replace('/',''))
@@ -179,29 +201,12 @@ for counter, targetl in targets.iterrows():
             align_dfl.append(out)
         align_df = pd.DataFrame(align_dfl)
     else:
-        if 'alignfile' in targetl:
-            alignfile = targetl.alignfile
-        elif 'targetid' in targetl:
-            targets_dir = '/'.join(args.targets.split('/')[:-1])+'/'
-            alignfile = f'{targets_dir}{targetl.targetid}_alignments.tsv'
-        else:
-            assert False, 'no alignment info '+(' '.join(targetl.index))
-        assert exists(alignfile)
+        assert 'alignfile' in targetl
+        alignfile = targetl.alignfile
         align_df = pd.read_table(alignfile)
 
     query_chainseq = targetl.chainseq
-    if 'outfile_prefix' in targetl:
-        outfile_prefix = targetl.outfile_prefix
-    else:
-        assert args.outfile_prefix is not None
-        if 'targetid' in targetl:
-            outfile_prefix = args.outfile_prefix+'_'+targetl.targetid
-        elif 'pdbid' in targetl:
-            print('use pdbid for targetid')
-            assert max(targets.pdbid.value_counts()) == 1 # ensure unique
-            outfile_prefix = args.outfile_prefix+'_'+targetl.pdbid
-        else:
-            outfile_prefix = f'{args.outfile_prefix}_T{counter}'
+    my_outfile_prefix = outfile_prefix+'_'+targetl.targetid
 
     query_sequence = query_chainseq.replace('/','')
     num_res = len(query_sequence)
@@ -238,8 +243,8 @@ for counter, targetl in targets.iterrows():
         assert pd.isna(target_len) or target_len == num_res
 
         chains_tmp, all_resids_tmp, all_coords_tmp, all_name1s_tmp = load_pdb_coords(
-            template_pdbfile, allow_chainbreaks=args.allow_chainbreaks,
-            allow_skipped_lines=args.allow_skipped_lines,
+            template_pdbfile, allow_chainbreaks=not args.disallow_chainbreaks,
+            allow_skipped_lines = not args.disallow_skipped_lines,
         )
 
         crs_tmp = [(c,r) for c in chains_tmp for r in all_resids_tmp[c]]
@@ -369,7 +374,7 @@ for counter, targetl in targets.iterrows():
 
 
     all_identities = np.array(all_template_features['template_sum_probs'])[:,0]
-    if args.dont_reorder_templates:
+    if not args.reorder_templates:
         reorder = np.arange(all_identities.shape[0])
     else: # reorder by seqid
         assert False # we never really want to do this anymore!
@@ -399,7 +404,7 @@ for counter, targetl in targets.iterrows():
         chainbreak_sequence=query_chainseq,
         template_features=all_template_features,
         model_runners=model_runners,
-        out_prefix=outfile_prefix,
+        out_prefix=my_outfile_prefix,
         #crop_size=crop_size,
         dump_pdbs = not (args.no_pdbs or args.terse),
         dump_metrics = not args.terse,
@@ -434,19 +439,9 @@ for counter, targetl in targets.iterrows():
                     outl[f'{model_name}_pae_{chain1}_{chain2}'] = pae
     final_dfl.append(outl)
 
-if args.final_outfile_prefix:
-    outfile_prefix = args.final_outfile_prefix
-elif args.outfile_prefix:
-    outfile_prefix = args.outfile_prefix
-elif 'outfile_prefix' in targets.columns:
-    outfile_prefix = targets.outfile_prefix.iloc[0]
-else:
-    outfile_prefix = None
-
-if outfile_prefix:
-    outfile = f'{outfile_prefix}_final.tsv'
-    pd.DataFrame(final_dfl).to_csv(outfile, sep='\t', index=False)
-    print('made:', outfile)
+outfile = f'{outfile_prefix}_final.tsv'
+pd.DataFrame(final_dfl).to_csv(outfile, sep='\t', index=False)
+print('made:', outfile)
 
 print('total_time:', hostname, platform, timer()-start_time)
 print('DONE')

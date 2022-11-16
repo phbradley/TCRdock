@@ -89,9 +89,7 @@ def run_alphafold(
     outfile = outprefix+'_targets.tsv'
     targets.to_csv(outfile, sep='\t', index=False)
 
-    xargs = (' --dont_reorder_templates --allow_chainbreaks '
-             f' --num_recycle {num_recycle} '
-             f' --allow_skipped_lines --model_names {model_name} ')
+    xargs = (f' --num_recycle {num_recycle} --model_names {model_name} ')
 
     cmd = (f'{PY} {EXE} {xargs} --targets {outfile} --outfile_prefix {outprefix} '
            f' > {outprefix}_run.log 2> {outprefix}_run.err')

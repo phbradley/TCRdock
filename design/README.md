@@ -1,6 +1,6 @@
 # Scripts for TCR loop redesign
 
-## UNPUBLISHED/UNTESTED
+## THIS IS ALL UNPUBLISHED/UNTESTED CODE
 
 These scripts operate on TSV-formatted input/output files with columns
 
@@ -9,7 +9,7 @@ These scripts operate on TSV-formatted input/output files with columns
 * template_0_template_pdbfile -- the filename of the first modeling template 
 * template_0_target_to_template_alignstring -- target-template alignment for first modeling template
 
-and optionally
+and optionally (e.g., after designing)
 
 * model_pdbfile -- filename of the design model
 * template_N_template_pdbfile -- (for N=1,2,3) filename of Nth modeling template
@@ -28,7 +28,6 @@ Example:
 ```
 python setup_for_cdr3_loop_design.py --num_runs 20000 --outfile run1_targets.tsv --template_pdbids 5m02 5tje --peptides KAVYNFATM
 ```
-
 
 ## `loop_design.py`
 
