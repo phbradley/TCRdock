@@ -7,7 +7,7 @@ if FRED_HUTCH_HACKS:
     LOOP_DESIGN_PYTHON = PYROSETTA_PYTHON # most will work here
 else: # UW paths??
     AF2_PYTHON = '/home/justas/.conda/envs/mlfold-test/bin/python'
-    PYROSETTA_PYTHON = None
+    PYROSETTA_PYTHON = '/software/conda/envs/pyrosetta/bin/python'
     MPNN_PYTHON = '/home/justas/.conda/envs/mlfold-test/bin/python'
     LOOP_DESIGN_PYTHON = AF2_PYTHON # most will work here
 
