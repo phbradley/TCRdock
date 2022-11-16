@@ -42,6 +42,7 @@ def get_designable_positions(
         extend_flex=1,
         nres=None,
         reverse=False,
+        num_contigs=2, # for debugging
 ):
     ''' the unaligned position plus extend_flex rsds on either side of each contig
     '''
@@ -60,7 +61,7 @@ def get_designable_positions(
         for pos in flex_posl:
             new_flex_posl.update([
                 pos+i for i in range(-extend_flex, extend_flex+1)])
-        assert len(new_flex_posl) == len(flex_posl) + 4*extend_flex
+        assert len(new_flex_posl) == len(flex_posl) + 2*extend_flex*num_contigs
         flex_posl = sorted(new_flex_posl)
     return flex_posl
 

@@ -83,5 +83,19 @@ target designs.
 
 Example:
 ```
-python cluster_designs.py --targets run1_top_designs.tsv --outfile run1redock.tsv
+python setup_for_redocking.py --targets run1_top_designs.tsv --outfile run1_redock.tsv
+```
+
+## `setup_for_peptide_xscans.py`
+
+Create input TSV file for the `af2_wrapper.py` script that will model all single-aa
+mutants of the target peptide into the designed complex. Uses the 'masking' approach
+where the full template coordinates are provided, but the template sequence is masked
+out in the peptide and CDR3 loop regions (the sidechain coords other than cbeta are
+also removed in the masked regions). Total number of output targets will be roughly
+(19 * peptide_len + 1) * num_targets.
+
+Example:
+```
+python setup_for_peptide_xscans.py --targets run1_top_designs.tsv --outfile run1_xscan.tsv
 ```
