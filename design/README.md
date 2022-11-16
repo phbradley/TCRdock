@@ -62,3 +62,13 @@ Example:
 ```
 python evaluate_designs.py  --targets run1_top_designs.tsv --outfile_prefix run1_eval
 ```
+
+## `cluster_designs.py`
+
+Cluster top-scoring designs based on RMSD and generate cluster pdbfiles and
+heatmaps showing amino acid sequence.
+
+Example:
+```
+python cluster_designs.py --targets run1_results.tsv --outfile_prefix run1clust --topn 100 --split_column pdbid
+```

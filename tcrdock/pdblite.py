@@ -150,11 +150,24 @@ def pose_from_pdb(filename, **kwargs):
     return pose
 
 
-def save_pdb_coords(outfile, resids, coords, sequence, verbose=False, bfactors=None):
+def save_pdb_coords(
+        outfile,
+        resids,
+        coords,
+        sequence,
+        verbose=False,
+        bfactors=None,
+        out=None,
+):
+
     ''' right now bfactors is a list of length = resids (all atoms in res have same)
     '''
     assert len(sequence) == len(resids)
-    out = open(outfile, 'w')
+    if out is None:
+        close_file = True
+        out = open(outfile, 'w')
+    else:
+        close_file = False
     last_chain = None
     counter=0
     if bfactors is None:
@@ -181,13 +194,15 @@ def save_pdb_coords(outfile, resids, coords, sequence, verbose=False, bfactors=N
             assert (outline[12:16] == atom and outline[17:20] == name3 and
                     outline[22:27] == resid) # confirm register
             out.write(outline)
-    out.close()
+    if close_file:
+        out.close()
     if verbose:
         print('made:', outfile)
 
 
-def dump_pdb(pose, outfile):
-    save_pdb_coords(outfile, pose['resids'], pose['coords'], pose['sequence'])
+def dump_pdb(pose, outfile, out=None):
+    save_pdb_coords(outfile, pose['resids'], pose['coords'], pose['sequence'],
+                    out=out)
 
 
 def check_coords_shape(pose):
@@ -209,7 +224,7 @@ def update_derived_data(pose):
 
     len(resids) == len(sequence)
     set(coords.keys()) == set(resids)
-    each chain id occurs in contiguous block of resids
+    chain ids come in one contiguous block of resids
     each (chain,resid) has N,CA,C, names = ' N  ', ' CA ', ' C  '
 
     sets up derived data:
