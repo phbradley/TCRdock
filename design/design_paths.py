@@ -1,11 +1,17 @@
 # change these as needed
-AF2_PYTHON = '/home/pbradley/anaconda2/envs/af2/bin/python'
-PYROSETTA_PYTHON = '/home/pbradley/anaconda2/envs/pyrosetta36/bin/python'
-MPNN_PYTHON = '/home/pbradley/anaconda2/envs/RF2atest/bin/python'
-LOOP_DESIGN_PYTHON = PYROSETTA_PYTHON # most will work here
+FRED_HUTCH_HACKS = False
+if FRED_HUTCH_HACKS:
+    AF2_PYTHON = '/home/pbradley/anaconda2/envs/af2/bin/python'
+    PYROSETTA_PYTHON = '/home/pbradley/anaconda2/envs/pyrosetta36/bin/python'
+    MPNN_PYTHON = '/home/pbradley/anaconda2/envs/RF2atest/bin/python'
+    LOOP_DESIGN_PYTHON = PYROSETTA_PYTHON # most will work here
+else: # UW paths??
+    AF2_PYTHON = '/home/justas/.conda/envs/mlfold-test/bin/python'
+    PYROSETTA_PYTHON = None
+    MPNN_PYTHON = '/home/justas/.conda/envs/mlfold-test/bin/python'
+    LOOP_DESIGN_PYTHON = AF2_PYTHON # most will work here
 
 MPNN_SCRIPT = '/home/pbradley/gitrepos/ProteinMPNN/protein_mpnn_run.py'
-FRED_HUTCH_HACKS = True
 ##
 
 import sys
