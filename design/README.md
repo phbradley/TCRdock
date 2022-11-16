@@ -1,5 +1,7 @@
 # Scripts for TCR loop redesign
 
+## UNPUBLISHED/UNTESTED
+
 These scripts operate on TSV-formatted input/output files with columns
 
 * targetid -- unique identifier for the design
@@ -21,7 +23,7 @@ Generate a `targets` input file for input to the `loop_design.py` script.
 
 Example:
 
-``` python
+```
 python setup_for_cdr3_loop_design.py --num_runs 20000 --outfile run1_targets.tsv --template_pdbids 5m02 5tje --peptides KAVYNFATM
 ```
 
@@ -38,6 +40,16 @@ Example:
 
 ```
 python loop_design.py  --targets run1_targets_batch_0.tsv --outfile_prefix run1_targets_batch_0_out
+```
+
+## `loop_refine.py`
+
+Refine a set of top-scoring designs by iterative mutation, alphafold modeling, and protein mpnn redesign.
+
+Example:
+
+```
+python loop_refine.py  --targets run1_top_designs.tsv --outfile_prefix run1_refine
 ```
 
 ## `evaluate_designs.py`
