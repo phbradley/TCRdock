@@ -11,11 +11,13 @@ These scripts operate on TSV-formatted input/output files with columns
 
 and optionally
 
-* model_pdbfile -- filename of the design mode
+* model_pdbfile -- filename of the design model
 * template_N_template_pdbfile -- (for N=1,2,3) filename of Nth modeling template
 * template_N_target_to_template_alignstring -- alignment for Nth modeling template
 * peptide_loop_pae -- PAE between peptide and flexible loop regions
-* other misc columns
+* pdbid -- PDB ID of the design template
+* loop_seq -- concatenated sequence of the flexible parts of the CDR3A and CDR3B loops
+* other misc columns with design scores and rmsds
 
 ## `setup_for_cdr3_loop_design.py`
 
@@ -66,9 +68,20 @@ python evaluate_designs.py  --targets run1_top_designs.tsv --outfile_prefix run1
 ## `cluster_designs.py`
 
 Cluster top-scoring designs based on RMSD and generate cluster pdbfiles and
-heatmaps showing amino acid sequence.
+heatmaps showing amino acid sequence. By default, sorts the input targets based
+on the `peptide_loop_pae` column.
 
 Example:
 ```
 python cluster_designs.py --targets run1_results.tsv --outfile_prefix run1clust --topn 100 --split_column pdbid
+```
+
+## `setup_for_redocking.py`
+
+Create input TSV file for the `af2_wrapper.py` script that will re-dock a set of
+target designs. 
+
+Example:
+```
+python cluster_designs.py --targets run1_top_designs.tsv --outfile run1redock.tsv
 ```
