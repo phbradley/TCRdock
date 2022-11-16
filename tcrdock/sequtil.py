@@ -1639,10 +1639,9 @@ def genes_ok_for_modeling(organism, va, ja, vb, jb, verbose=True):
 
     for g in [va, ja, vb, jb]:
         if g not in all_genes[organism]:
-            from .tcrdist.basic import path_to_db, db_file
             print(f'ERROR: unrecognized gene: "{g}" for organism "{organism}"')
             # for error output:
-            dbfile = path_to_db / db_file
+            dbfile = tcrdist.basic.path_to_db / tcrdist.basic.db_file
             print('check the ids in', dbfile, 'for organism', organism)
             return False
 
