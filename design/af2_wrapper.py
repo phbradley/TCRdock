@@ -31,7 +31,7 @@ if design_paths.FRED_HUTCH_HACKS:
         '/home/pbradley/anaconda2/envs/af2/lib:'),\
         'export LD_LIBRARY_PATH=/home/pbradley/anaconda2/envs/af2/lib:$LD_LIBRARY_PATH'
 
-assert which('ptxas') is not None
+#assert which('ptxas') is not None
 
 
 import argparse
