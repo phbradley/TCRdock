@@ -19,6 +19,34 @@ and optionally (e.g., after designing)
 * loop_seq -- concatenated sequence of the flexible parts of the CDR3A and CDR3B loops
 * other misc columns with design scores and rmsds
 
+## Running batches
+
+The three "setup" scripts, `setup_for_cdr3_loop_design.py`, `setup_for_redocking.py`,
+and `setup_for_peptide_xscans.py` create TSV-formatted input files that can be read by
+the scripts `loop_design.py`, `af2_wrapper.py`, and `af2_wrapper.py`, respectively.
+The way I've been running things, the TSV-formatted files made by these setup scripts
+contain more targets than can be run consecutively on a single GPU. One option is to
+split the input files, but the `loop_design.py` and `af2_wrapper.py` support running
+batch subsets using the `--batch` and `--batch_size` command line arguments. For
+example, if `targets.tsv` contains 75 targets, they could be run in 3 separate commands
+as follows:
+
+```
+python loop_design.py --targets targets.tsv --batch 0 --batch_size 25 --outfile_prefix run1
+
+python loop_design.py --targets targets.tsv --batch 1 --batch_size 25 --outfile_prefix run1
+
+python loop_design.py --targets targets.tsv --batch 2 --batch_size 25 --outfile_prefix run1
+```
+
+## `num_recycle`
+
+`af2_wrapper.py` takes --num_recycle as a commandline argument. When called during
+design with `loop_design.py`, or rescoring with `evaluate_designs.py`,
+a value of 1 is passed. For peptide x-scanning, I think 1 makes sense too, but for
+redocking, I've been using a value of 3.
+
+
 ## `setup_for_cdr3_loop_design.py`
 
 Generate a `targets` input file for input to the `loop_design.py` script.
