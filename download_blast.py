@@ -57,7 +57,7 @@ tarfile = address.split('/')[-1]
 assert exists(tarfile)
 
 if not exists(blast_foldername):
-    cmd = 'tar -xzvf '+tarfile
+    cmd = 'tar -xzf '+tarfile
     print(cmd)
     system(cmd)
 else:
