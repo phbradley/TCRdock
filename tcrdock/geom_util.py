@@ -1,6 +1,7 @@
 import numpy as np
 import sys
 from scipy.spatial.transform import Rotation
+import scipy.stats
 import copy
 
 # from os import system
@@ -87,3 +88,17 @@ def stub_from_three_points(a,b,c):
 
 def global2local(stub, v):
     return stub['axes'].dot(v - stub['origin'])
+
+def random_unit_vector(dim=3):
+    ''' returns shape (3,) numpy array
+    '''
+    vec = scipy.stats.norm.rvs(size=dim)
+    return vec / max(1e-9,np.linalg.norm(vec))
+
+def random_rotation_matrix_gaussian_angle(angle_sdev_radians):
+    ''' returns shape (3,3) numpy array
+    '''
+    angle = angle_sdev_radians * scipy.stats.norm.rvs()
+    uvec = random_unit_vector()
+    r = Rotation.from_rotvec(angle*uvec)
+    return r.as_matrix()

@@ -8,10 +8,13 @@ from .all_genes import all_genes, gap_character
 from .genetic_code import genetic_code, reverse_genetic_code
 from . import logo_tools
 
+# set up legacy D gene nucleotide sequence dict, 1-indexed integer keys
 all_trbd_nucseq = {}
 for organism in all_genes:
-    d_ids = sorted( ( id for id,g in all_genes[organism].items() if g.region == 'D' and g.chain == 'B' ) )
-    all_trbd_nucseq[ organism ] = dict( ( ( d_ids.index(id)+1, all_genes[organism][id].nucseq ) for id in d_ids ) )
+    d_ids = sorted((id for id,g in all_genes[organism].items()
+                    if g.region == 'D' and g.chain == 'B'))
+    all_trbd_nucseq[ organism ] = dict(
+        ((d_ids.index(id)+1, all_genes[organism][id].nucseq ) for id in d_ids))
 
 ########################################################################################################################
 default_mismatch_score_for_cdr3_nucseq_probabilities = -4 ## blast is -3
@@ -26,7 +29,25 @@ def count_matches( a,b,mismatch_score=-3 ):
     score=0
     num_matches = 0
     for i in range(min(len(a),len(b))):
-        if a[i] == b[i] or logo_tools.nuc_match_lower_case.get( (a[i],b[i]), False ):
+        if ( a[i] == b[i] or
+             logo_tools.nuc_match_lower_case.get((a[i],b[i]), False)):
+            score += match_score
+        else:
+            score += mismatch_score
+        if score >= best_score: ## gt OR EQUAL! take longer matched regions
+            best_score = score
+            num_matches = i+1
+    return num_matches
+
+def count_aa_matches( a,b,mismatch_score=-3 ):
+    ## from the beginning
+    assert a[0].upper() == a[0]
+    match_score    = 1
+    best_score=0
+    score=0
+    num_matches = 0
+    for i in range(min(len(a),len(b))):
+        if a[i] == b[i]:
             score += match_score
         else:
             score += mismatch_score
@@ -37,7 +58,7 @@ def count_matches( a,b,mismatch_score=-3 ):
 
 
 
-def get_v_cdr3_nucseq( organism, v_gene, paranoid = False ):
+def get_v_cdr3_nucseq( organism, v_gene):
     vg = all_genes[organism][v_gene]
     ab = vg.chain
 
@@ -72,7 +93,7 @@ def get_v_cdr3_nucseq( organism, v_gene, paranoid = False ):
     return v_nucseq
 
 
-def get_j_cdr3_nucseq( organism, j_gene, paranoid = False ):
+def get_j_cdr3_nucseq( organism, j_gene):
     jg = all_genes[organism][j_gene]
     ab = jg.chain
 
@@ -150,6 +171,9 @@ def find_alternate_alleles(
     only take an alternate allele if its coverage of cdr3_nucseq is greater by at least
     min_improvement over the current allele
     '''
+    mismatch_score = default_mismatch_score_for_junction_analysis # -4
+    # want to eventually make this the default:
+    #mismatch_score = -1000 # 2022-01-21  this makes more sense to me (PB)
 
     v_prefix = v_gene[:v_gene.index('*')+1]
     alternate_v_alleles = [ x for x in all_genes[organism] if x.startswith(v_prefix) and x != v_gene]
@@ -162,7 +186,7 @@ def find_alternate_alleles(
         if not v_nucseq:
             #print(vg, v_nucseq)
             continue
-        num_matched = count_matches( v_nucseq, cdr3_nucseq, default_mismatch_score_for_junction_analysis )
+        num_matched = count_matches(v_nucseq, cdr3_nucseq, mismatch_score)
         if vg == v_gene:
             best_v_gene = vg
             best_num_matched = num_matched
@@ -175,9 +199,9 @@ def find_alternate_alleles(
 
     for jg in [j_gene]+alternate_j_alleles:
         j_nucseq = get_j_cdr3_nucseq( organism, jg )
-        num_matched = count_matches( ''.join( reversed( list( j_nucseq ) )),
-                                     ''.join( reversed( list( cdr3_nucseq ))),
-                                     default_mismatch_score_for_junction_analysis )
+        num_matched = count_matches(''.join( reversed( list( j_nucseq ) )),
+                                    ''.join( reversed( list( cdr3_nucseq ))),
+                                    mismatch_score)
         if jg == j_gene:
             best_j_gene = jg
             best_num_matched = num_matched
@@ -203,7 +227,8 @@ def find_alternate_alleles_for_tcrs(
 
     For ones that occur sufficiently often, swap them into the tcrs where they match better
     '''
-
+    if verbose:
+        print('find_alternate_alleles_for_tcrs: num_tcrs:', len(tcrs))
     all_counts = {}
     all_new_genes = []
     for atcr, btcr in tcrs:
@@ -250,18 +275,34 @@ def find_alternate_alleles_for_tcrs(
 
 
 
-def analyze_junction( organism, v_gene, j_gene, cdr3_protseq, cdr3_nucseq, force_d_id=0, return_cdr3_nucseq_src=False ):
+def analyze_junction(
+        organism,
+        v_gene,
+        j_gene,
+        cdr3_protseq,
+        cdr3_nucseq,
+        force_d_id=0,
+        return_cdr3_nucseq_src=False,
+        mismatch_score=default_mismatch_score_for_junction_analysis,
+):
+    assert cdr3_nucseq == cdr3_nucseq.lower() # confirm lowercase
+
     #print organism, v_gene, j_gene, cdr3_protseq, cdr3_nucseq
     #assert v_gene.startswith('TR') #and v_gene[2] == j_gene[2]
+
+    # if it's not all standard bases, we need to change how we do the
+    # D gene finding...
+    cdr3_nucseq_has_other = any(x not in 'acgt' for x in cdr3_nucseq)
+
     ab = all_genes[organism][v_gene].chain
     v_nucseq = get_v_cdr3_nucseq( organism, v_gene )
     j_nucseq = get_j_cdr3_nucseq( organism, j_gene )
     ## how far out do we match
-    num_matched_v = count_matches( v_nucseq, cdr3_nucseq, default_mismatch_score_for_junction_analysis )
+    num_matched_v = count_matches( v_nucseq, cdr3_nucseq, mismatch_score)
 
     num_matched_j = count_matches( ''.join( reversed( list( j_nucseq ) )),
                                    ''.join( reversed( list( cdr3_nucseq ))),
-                                   default_mismatch_score_for_junction_analysis )
+                                   mismatch_score)
 
 
     if num_matched_v + num_matched_j > len(cdr3_nucseq):
@@ -293,7 +334,8 @@ def analyze_junction( organism, v_gene, j_gene, cdr3_protseq, cdr3_nucseq, force
     v_trim = len(v_nucseq)-num_matched_v
     j_trim = len(j_nucseq)-num_matched_j
 
-    assert len(cdr3_nucseq) == len(v_nucseq) + len(nseq) + len(j_nucseq) - ( v_trim + j_trim )
+    assert (len(cdr3_nucseq) ==
+            len(v_nucseq) + len(nseq) + len(j_nucseq) - ( v_trim + j_trim ))
 
     #d_info = ''
     n_vj_insert = 0
@@ -314,15 +356,19 @@ def analyze_junction( organism, v_gene, j_gene, cdr3_protseq, cdr3_nucseq, force
             for start in range(len(d_nucseq)):
                 for stop in range(start,len(d_nucseq)):
                     overlap_seq = d_nucseq[start:stop+1]
-                    if overlap_seq in nseq:
+                    # string containment only works if cdr3_nucseq is all acgt
+                    if ((not cdr3_nucseq_has_other and overlap_seq in nseq) or
+                        (cdr3_nucseq_has_other and
+                         logo_tools.degnucs_contain(nseq, overlap_seq))):
                         if len(overlap_seq)>max_overlap:
                             max_overlap = len(overlap_seq)
                             best_d_id = d_id
                             best_overlap_seq = overlap_seq
                             best_trim = (start,len(d_nucseq)-1-stop)
 
-        if max_overlap: ## found a bit of d, although it might be bogus (eg 1 nt)
-            pos = nseq.index( best_overlap_seq )
+        if max_overlap: # found a bit of d, although it might be bogus (eg 1 nt)
+            pos = (logo_tools.degnucs_index(nseq, best_overlap_seq)
+                   if cdr3_nucseq_has_other else nseq.index(best_overlap_seq))
             for i in range(pos+num_matched_v,pos+num_matched_v+max_overlap):
                 assert ncount[i] == 1
                 ncount[i] = 0
@@ -334,10 +380,11 @@ def analyze_junction( organism, v_gene, j_gene, cdr3_protseq, cdr3_nucseq, force
             d0_trim = best_trim[0]
             d1_trim = best_trim[1]
 
-            expected_cdr3_nucseq_len = ( len(v_nucseq) + n_vd_insert +
-                                         len(all_trbd_nucseq[organism][best_d_id]) + n_dj_insert +
-                                         len(j_nucseq) -
-                                         ( v_trim + d0_trim + d1_trim + j_trim ) )
+            expected_cdr3_nucseq_len = (
+                len(v_nucseq) + n_vd_insert +
+                len(all_trbd_nucseq[organism][best_d_id]) + n_dj_insert +
+                len(j_nucseq) -
+                ( v_trim + d0_trim + d1_trim + j_trim ) )
             assert len(cdr3_nucseq) == expected_cdr3_nucseq_len
 
 
@@ -345,10 +392,9 @@ def analyze_junction( organism, v_gene, j_gene, cdr3_protseq, cdr3_nucseq, force
             best_d_id = 0
             n_vd_insert = 0
             n_dj_insert = 0
-            d0_trim = 0
-            d1_trim = 0
-
-
+            n_vj_insert = len(nseq) # BUGFIX? added 2021-07-12
+            d0_trim = 0 # this is not quite right, since D gene was likely completely
+            d1_trim = 0 # trimmed... so total trims value will not make sense
 
 
     if cdr3_protseq:
@@ -379,11 +425,23 @@ def analyze_junction( organism, v_gene, j_gene, cdr3_protseq, cdr3_nucseq, force
     trims = ( v_trim, d0_trim, d1_trim, j_trim )
     inserts = ( best_d_id, n_vd_insert, n_dj_insert, n_vj_insert )
 
-    ## new_nucseq spans the inserted nucleotide sequence and has '+' for D-nucleotides
+    ## new_nucseq spans the inserted nucleotide sequence and has '+'
+    ##  for D-nucleotides
     if return_cdr3_nucseq_src:
-        return new_nucseq, cdr3_protseq_masked, cdr3_protseq_new_nucleotide_countstring, trims, inserts, cdr3_nucseq_src
+        return (new_nucseq,
+                cdr3_protseq_masked,
+                cdr3_protseq_new_nucleotide_countstring,
+                trims,
+                inserts,
+                cdr3_nucseq_src,
+        )
     else:
-        return new_nucseq, cdr3_protseq_masked, cdr3_protseq_new_nucleotide_countstring, trims, inserts
+        return (new_nucseq,
+                cdr3_protseq_masked,
+                cdr3_protseq_new_nucleotide_countstring,
+                trims,
+                inserts,
+        )
 
 
 def parse_tcr_junctions( organism, tcrs ):
@@ -400,18 +458,22 @@ def parse_tcr_junctions( organism, tcrs ):
         va, ja, cdr3a, cdr3a_nucseq = atcr
         vb, jb, cdr3b, cdr3b_nucseq = btcr
 
-        aresults = analyze_junction(organism, va, ja, cdr3a, cdr3a_nucseq, return_cdr3_nucseq_src=True)
-        bresults = analyze_junction(organism, vb, jb, cdr3b, cdr3b_nucseq, return_cdr3_nucseq_src=True)
+        aresults = analyze_junction(organism, va, ja, cdr3a, cdr3a_nucseq,
+                                    return_cdr3_nucseq_src=True)
+        bresults = analyze_junction(organism, vb, jb, cdr3b, cdr3b_nucseq,
+                                    return_cdr3_nucseq_src=True)
 
         # trims = ( v_trim, d0_trim, d1_trim, j_trim )
         # inserts = ( best_d_id, n_vd_insert, n_dj_insert, n_vj_insert )
-        # return new_nucseq, cdr3_protseq_masked, cdr3_protseq_new_nucleotide_countstring, trims, inserts, cdr3_nucseq_src
 
         _, cdr3a_protseq_masked, _, a_trims, a_inserts, cdr3a_nucseq_src = aresults
         _, cdr3b_protseq_masked, _, b_trims, b_inserts, cdr3b_nucseq_src = bresults
 
         assert a_trims[1]+a_trims[2] == 0
         assert a_inserts[1]+a_inserts[2] == 0
+
+        a_indels = f'+{sum(a_inserts)}-{sum(a_trims)}'
+        b_indels = f'+{sum(b_inserts)}-{sum(b_trims)}'
 
         dfl.append( OrderedDict( clone_index=ii,
                                  va=va,
@@ -436,6 +498,8 @@ def parse_tcr_junctions( organism, tcrs ):
                                  vd_insert=b_inserts[1],
                                  dj_insert=b_inserts[2],
                                  vj_insert=b_inserts[3],
+                                 a_indels=a_indels,
+                                 b_indels=b_indels,
                                  ))
 
     return pd.DataFrame(dfl)
@@ -443,7 +507,10 @@ def parse_tcr_junctions( organism, tcrs ):
 
 def vj_compatible(v_gene, j_gene, organism):
     if organism == 'human_ig': # enforce kappa or lambda
-        assert v_gene.startswith('IG') and j_gene.startswith('IG') and v_gene[2] in 'HKL' and j_gene[2] in 'HKL'
+        assert (v_gene.startswith('IG') and
+                j_gene.startswith('IG') and
+                v_gene[2] in 'HKL' and
+                j_gene[2] in 'HKL')
         return v_gene[2] == j_gene[2]
     else:
         return True
@@ -453,8 +520,13 @@ def resample_shuffled_tcr_chains(
         num_samples,
         chain, # 'A' or 'B'
         junctions_df, # dataframe made by the above function
+        preserve_vj_pairings = False,
 ):
     ''' returns list of (v_gene, j_gene, cdr3, cdr3_nucseq) for inputting into tcrdist calcs (e.g.)
+
+    Does not impose a TRBJ1 --> TRBD1 restriction, but that could
+    be added...
+
     '''
     assert chain in ['A', 'B']
     # need list of (v_gene, j_gene, cdr3_nucseq, breakpoints_pre_d, breakpoints_post_d)
@@ -493,6 +565,28 @@ def resample_shuffled_tcr_chains(
             junctions.append( (l.vb, l.jb, l.cdr3b_nucseq,
                                breakpoints_pre_d, breakpoints_post_d))
 
+    if preserve_vj_pairings:
+        # setup a mapping from v/j genes to junctions
+        print('create gene --> junctions mapping')
+        v_gene2junctions, j_gene2junctions = {}, {}
+        def trim_allele(g):
+            return g[:g.index('*')]
+
+        for j in junctions:
+            vg = trim_allele(j[0])
+            jg = trim_allele(j[1])
+            v_gene2junctions.setdefault(vg,[]).append(j)
+            j_gene2junctions.setdefault(jg,[]).append(j)
+        #debugging
+        v_counts = Counter({x:len(y) for x,y in v_gene2junctions.items()})
+        j_counts = Counter({x:len(y) for x,y in j_gene2junctions.items()})
+        for v,count in v_counts.most_common():
+            print(f'v_count: {count:5d} {count/len(junctions):.3f} {v}')
+        for j,count in j_counts.most_common():
+            print(f'j_count: {count:5d} {count/len(junctions):.3f} {j}')
+        sys.stdout.flush()
+
+
     # repeat:
     # choose 2 random tcrs; are their breakpoints compatible?
     # if so, choose random compatible breakpoint, make frankentcr
@@ -503,9 +597,13 @@ def resample_shuffled_tcr_chains(
     successes = 0
     while len(new_tcrs) < num_samples:
         #print(len(new_tcrs))
-
-        t1 = random.choice(junctions)
-        t2 = random.choice(junctions)
+        if preserve_vj_pairings:
+            j = random.choice(junctions) # determines v and j genes
+            t1 = random.choice(v_gene2junctions[trim_allele(j[0])])
+            t2 = random.choice(j_gene2junctions[trim_allele(j[1])])
+        else:
+            t1 = random.choice(junctions)
+            t2 = random.choice(junctions)
         nucseq1 = t1[2]
         nucseq2 = t2[2]
         if nucseq1 == nucseq2:
@@ -519,6 +617,8 @@ def resample_shuffled_tcr_chains(
 
         success = False
         for ind in inds:
+            # ind=3: t1[ind] = breakpoints_pre_d
+            # ind=4: t1[ind] = breakpoints_post_d
             shared = t1[ind] & t2[ind]
             if shared:
                 bp = random.choice(list(shared))

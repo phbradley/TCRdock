@@ -16,7 +16,7 @@ class TCRdockInfo():
     * tcr = ((va,ja,cdr3a),(vb,jb,cdr3b))
     * mhc_core: mhc core positions
     * tcr_core: tcr core positions
-    * tcr_cdrs: list of 8 [start,stop] (inclusive) 1-indexed position lists
+    * tcr_cdrs: list of 8 [start,stop] (inclusive) 0-indexed position lists
 
     all positions are 0-indexed wrt full merged pose
 
@@ -53,7 +53,7 @@ class TCRdockInfo():
     ):
         self.valid = False
         self.organism = organism
-        self.mhc_class = mhc_class
+        self.mhc_class = int(mhc_class)
         self.pep_seq = pep_seq
         #self.mhc_aseq = mhc_aseq
         #self.mhc_bseq = mhc_bseq
@@ -112,7 +112,7 @@ class TCRdockInfo():
         return self
 
     def renumber(self, old2new):
-        ''' old2new is a mapping of 1-indexed positions from old to new
+        ''' old2new is a mapping of 0-indexed positions from old to new
         numbering systems
 
         will be bad if old2new doesn't cover all our positions
@@ -127,16 +127,16 @@ class TCRdockInfo():
         return self
 
     def delete_residue_range(self, start, stop):
-        ''' delete from start to stop , inclusive
-        ie delete [start,stop] or range(start,stop+1)
+        ''' delete from start to stop , EXCLUSIVE of stop !!!!!!!!!!!!!!!!!!!!!!
+        ie delete [start,stop) or range(start,stop)
 
-        puts -1 for residues in [start,stop] range, if there are any
+        puts -1 for residues in [start,stop) range, if there are any
         '''
 
         maxpos = self.tcr_cdrs[-1][-1] # end of CDR3beta is biggest
-        numdel = stop-start+1
-        old2new = {x:x if x<start else -1 if x<=stop else x-numdel
-                   for x in range(1,maxpos+1)}
+        numdel = stop-start
+        old2new = {x:x if x<start else -1 if x<stop else x-numdel
+                   for x in range(maxpos+1)}
         self.renumber(old2new)
         return self
 
