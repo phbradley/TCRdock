@@ -54,6 +54,12 @@ parser.add_argument('--maintain_relative_paths', action='store_true',
 parser.add_argument('--exclude_pdbids_column',
                     help='Column in the --targets_tsvfile file with comma-separated '
                     'lists of pdbfiles to exclude from modeling')
+parser.add_argument('--new_docking', action='store_true',
+                    help='Use a new, unpublished approach for constructing the '
+                    'TCR:pMHC docking geometry in the AlphaFold templates. '
+                    'This only requires 1 run per target (ie, it is 3x faster than '
+                    'the default) and preliminary tests of the fine-tuned version '
+                    'are promising.')
 
 args = parser.parse_args()
 
@@ -108,15 +114,18 @@ if not args.maintain_relative_paths:
 if not output_dir.endswith('/'):
     output_dir += '/' # this will cause issues on windows but code later assumes it...
 
+num_runs = 1 if args.new_docking else args.num_runs
+
 # run the setup code
 tcrdock.sequtil.setup_for_alphafold(
     targets, output_dir, clobber=True,
     min_single_chain_tcrdist=min_single_chain_tcrdist,
     exclude_self_peptide_docking_geometries=exclude_self_peptide_docking_geometries,
     min_pmhc_peptide_mismatches=min_pmhc_peptide_mismatches,
-    num_runs = args.num_runs,
+    num_runs = num_runs,
     min_dgeom_peptide_mismatches=min_dgeom_peptide_mismatches, #
     min_dgeom_paired_tcrdist = min_dgeom_paired_tcrdist, #
     min_dgeom_singlechain_tcrdist = min_dgeom_singlechain_tcrdist,
     exclude_pdbids_column = args.exclude_pdbids_column,
+    use_opt_dgeoms = args.new_docking,
 )
