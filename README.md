@@ -5,6 +5,12 @@ Python tools for TCR:peptide-MHC modeling and analysis
 Described in the manuscript: "Structure-based prediction of T cell
 receptor:peptide-MHC interactions" by Philip Bradley. bioRXiv link: 
 
+***[NEW]*** Google colab notebook for running TCR:pMHC structure predictions
+with an updated, fine-tuned model and streamlined workflow (3x faster simulations
+than in the paper)
+[google colab notebook](tcrdock_colab_pipeline_v1.ipynb) which you can
+[![open in colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/phbradley/TCRdock/blob/main/tcrdock_colab_pipeline_v1.ipynb)
+
 # Core functionality
 
 * Set up and run TCR-specialized AlphaFold simulations starting from a TSV file with
