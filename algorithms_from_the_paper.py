@@ -9,7 +9,7 @@ def compute_tcrdiv(D, sigma=120.):
     N = D.shape[0]
     D = D.copy() # don't change passed array
     D[np.arange(N), np.arange(N)] = 1e6 # set diagonal to a very large value
-    return -1*np.log(np.sum(np.exp(-1*(D/sdev)**2))/(N*(N-1)))
+    return -1*np.log(np.sum(np.exp(-1*(D/sigma)**2))/(N*(N-1)))
 
 
 
