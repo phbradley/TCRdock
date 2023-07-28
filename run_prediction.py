@@ -170,6 +170,11 @@ for counter, targetl in targets.iterrows():
     for model_name, metrics in all_metrics.items():
         plddts = metrics['plddt']
         paes = metrics.get('predicted_aligned_error', None)
+        filetags = 'pdb plddt ptm predicted_aligned_error'.split()
+        for tag in filetags:
+            fname = metrics.get(tag+'file', None)
+            if fname is not None:
+                outl[f'{model_name}_{tag}_file'] = fname
 
         cs = query_chainseq.split('/')
         chain_stops = list(itertools.accumulate(len(x) for x in cs))

@@ -53,8 +53,6 @@ class DockingGeometry():
         coordinates are defined.
         '''
         from .geom_util import global2local
-        #def global2local(stub, v):
-        #    return stub['axes'].dot(v - stub['origin'])
 
         self.torsion = dihedral_radians(
             mhc_stub['origin'] + mhc_stub['axes'][1],
@@ -116,6 +114,26 @@ class DockingGeometry():
         self.mhc_unit_z = D['mhc_unit_z']
         self.mhc_unit_x_is_negative = bool(D.get('mhc_unit_x_is_negative',False))
         return self
+
+    def from_array(self, A):
+        'alphabetical order: d, mhc_unit_y/z, tcr_unit_y/z, torsion'
+        assert A.shape == (6,)
+        self.d = A[0]
+        self.mhc_unit_y = A[1]
+        self.mhc_unit_z = A[2]
+        self.tcr_unit_y = A[3]
+        self.tcr_unit_z = A[4]
+        self.torsion = (A[5]+2*np.pi)%(2*np.pi) # radians
+        self.tcr_unit_x_is_negative = False
+        self.mhc_unit_x_is_negative = False
+        return self
+
+    def to_array(self):
+        'alphabetical order: d, mhc_unit_y/z, tcr_unit_y/z, torsion'
+        assert not (self.tcr_unit_x_is_negative or self.mhc_unit_x_is_negative)
+        return np.array([self.d, self.mhc_unit_y, self.mhc_unit_z,
+                         self.tcr_unit_y, self.tcr_unit_z, self.torsion]).astype(float)
+
 
     def to_string(self):
         return json.dumps(self.to_dict(), separators=(',', ':'))
@@ -345,5 +363,27 @@ def pick_docking_geometry_reps(
     return [dgeoms[x] for x in rep_indices], rep_indices
 
 
+
+opt_dgeoms = None
+
+def load_opt_dgeoms(mhc_class):
+    ''' returns list of four DockingGeometry objects
+    '''
+    global opt_dgeoms
+    assert mhc_class in [1,2]
+
+    if opt_dgeoms is None:
+        fname = util.path_to_db / 'opt_tmpl_dgeoms_v1.txt'
+        opt_x = np.loadtxt(fname)
+        assert opt_x.shape == (2, 24)
+
+        opt_dgeoms = {1:[], 2:[]}
+        for cls in [1,2]:
+            dgeoms = []
+            for ii in range(4):
+                dgeoms.append(DockingGeometry().from_array(opt_x[cls-1][ii*6:(ii+1)*6]))
+            opt_dgeoms[cls] = dgeoms
+
+    return opt_dgeoms[mhc_class]
 
 

@@ -262,18 +262,23 @@ def predict_structure(
         print(f"model_{n+1} {np.mean(plddts[r])}")
 
         if dump_pdbs:
-            unrelaxed_pdb_path = f'{prefix}_model_{n+1}_{model_names[r]}.pdb'
+            #unrelaxed_pdb_path = f'{prefix}_model_{n+1}_{model_names[r]}.pdb'
+            unrelaxed_pdb_path = f'{prefix}_model_1_{model_name}.pdb' # predictable!
             with open(unrelaxed_pdb_path, 'w') as f: f.write(unrelaxed_pdb_lines[r])
+            all_metrics[model_name]['pdbfile'] = unrelaxed_pdb_path
 
 
         #plddts_ranked[f"model_{n+1}"] = plddts[r]
 
         if dump_metrics:
-            metrics_prefix = f'{prefix}_model_{n+1}_{model_names[r]}'
+            #metrics_prefix = f'{prefix}_model_{n+1}_{model_names[r]}'
+            metrics_prefix = f'{prefix}_model_1_{model_names[r]}'
             for tag in metric_tags:
                 m = metrics[tag][r]
                 if m is not None:
-                    np.save(f'{metrics_prefix}_{tag}.npy', m)
+                    fname = f'{metrics_prefix}_{tag}.npy'
+                    np.save(fname, m)
+                    all_metrics[model_name][f'{tag}file'] = fname
 
     return all_metrics
 

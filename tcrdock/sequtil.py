@@ -144,8 +144,9 @@ ternary_info = all_template_info[TERNARY]
 
 all_template_poses = {TCR:{}, PMHC:{}, TERNARY:{}}
 
-BAD_DGEOM_PDBIDS = '5sws 7jwi 4jry 4nhu 3tjh 4y19 4y1a 1ymm 2wbj'.split()
+BAD_DGEOM_PDBIDS = '5sws 7jwi 4jry 4nhu 3tjh 4y19 4y1a 1ymm 2wbj 6uz1'.split()
 BAD_PMHC_PDBIDS = '3rgv 4ms8 6v1a 6v19 6v18 6v15 6v13 6v0y 2uwe 2jcc 2j8u 1lp9'.split()
+# (new) 6uz1 is engineered and binds down by B2M
 # 3rgv has cterm of peptide out of groove
 # 4ms8 has chainbreaks (should check for those!)
 # rest are all human MHC with mouse TCRs...
@@ -699,12 +700,13 @@ assert count_peptide_mismatches(pep1,pep2)==1
 def get_clean_and_nonredundant_ternary_tcrs_df(
         min_peptide_mismatches = 3,
         min_tcrdist = 120.5,
-        peptide_tcrdist_logical = 'or', # 'or' or 'and'
+        peptide_tcrdist_logical = 'or', # 'or' or 'and' -- 'or' is nr by either feature
         drop_HLA_E = True,
         verbose=False,
         skip_redundancy_check=False, # just add resol,mismatches and sort
         filter_BAD_DGEOM_PDBIDS=True,
         filter_BAD_PMHC_PDBIDS=True,
+        tcrs=None,
 ):
     ''' peptide_tcrdist_logical = 'or' is more stringent redundancy filtering
     ie, smaller df returned. A TCR:pMHC is considered redundant by peptide OR
@@ -713,7 +715,10 @@ def get_clean_and_nonredundant_ternary_tcrs_df(
     '''
     assert peptide_tcrdist_logical in ['or','and']
 
-    tcrs = ternary_info.copy()
+    if tcrs is None:
+        tcrs = ternary_info.copy()
+    else:
+        tcrs = tcrs.copy()
 
     bad_pdbids = set()
     if filter_BAD_DGEOM_PDBIDS:
@@ -732,7 +737,8 @@ def get_clean_and_nonredundant_ternary_tcrs_df(
     pdbid2mismatches = {}
     for organism in 'human mouse'.split():
         # temporary hack...
-        logfile = path_to_db / f'tmp.pdb_tcr_{organism}.2021-08-05.log'
+        logfile = path_to_db / f'tmp.pdb_tcr_{organism}.2023-06-02.log'
+        # logfile = path_to_db / f'tmp.pdb_tcr_{organism}.2021-08-05.log'
         assert exists(logfile)
         for line in os.popen(f'grep ^both {logfile}'):
             l = line.split()
@@ -801,6 +807,7 @@ def filter_templates_by_tcrdist(
         organism, va, cdr3a, vb, cdr3b,
         min_paired_tcrdist=-1,
         min_singlechain_tcrdist=-1,
+        verbose=False,
 ):
     ''' returns new templates
 
@@ -830,8 +837,9 @@ def filter_templates_by_tcrdist(
     too_close_mask = ((templates.organism==organism)&
                       ((templates.paired_tcrdist < min_paired_tcrdist)|
                        (templates.singlechain_tcrdist < min_singlechain_tcrdist)))
-    print('too close by tcrdist:', np.sum(too_close_mask), organism,
-          va, cdr3a, vb, cdr3b)
+    if verbose:
+        print('too close by tcrdist:', np.sum(too_close_mask), organism,
+              va, cdr3a, vb, cdr3b)
 
     return templates[~too_close_mask].copy()
 
@@ -841,6 +849,7 @@ def filter_templates_by_peptide_mismatches(
         mhc_class,
         peptides_for_filtering,
         min_peptide_mismatches,
+        verbose = False,
 ):
     if not peptides_for_filtering:
         return templates.copy()
@@ -851,8 +860,9 @@ def filter_templates_by_peptide_mismatches(
     too_close_mask = ((templates.organism==organism) &
                       (templates.mhc_class==mhc_class) &
                       (templates.filt_peptide_mismatches<min_peptide_mismatches))
-    print('too close by peptide mismatches:', np.sum(too_close_mask), organism,
-          peptides_for_filtering)
+    if verbose:
+        print('too close by peptide mismatches:', np.sum(too_close_mask), organism,
+              peptides_for_filtering)
 
     return templates[~too_close_mask].copy()
 
@@ -1087,6 +1097,8 @@ def make_templates_for_alphafold(
         pick_dgeoms_using_tcrdist=False, # implies num_runs=3
         use_same_pmhc_dgeoms=False,
         exclude_pdbids=None,
+        force_pmhc_pdbids=None,
+        use_opt_dgeoms=False,
 ):
     ''' Makes num_templates_per_run * num_runs template pdb files
 
@@ -1114,6 +1126,9 @@ def make_templates_for_alphafold(
 
     if pick_dgeoms_using_tcrdist:
         assert num_runs == 3 # AB, A, B
+
+    if use_opt_dgeoms:
+        assert num_runs == 1
 
     if exclude_docking_geometry_peptides is None:
         exclude_docking_geometry_peptides = []
@@ -1156,7 +1171,8 @@ def make_templates_for_alphafold(
         # use new pmhc-only data
         for l in pmhc_info.itertuples():
             if (l.organism!=organism or l.mhc_class!=mhc_class or
-                l.pdbid in BAD_PMHC_PDBIDS or l.pdbid in exclude_pdbids):
+                l.pdbid in BAD_PMHC_PDBIDS or l.pdbid in exclude_pdbids or
+                (force_pmhc_pdbids and l.pdbid not in force_pmhc_pdbids)):
                 continue
 
             tmp_mhc_alseq = l.mhc_alignseq
@@ -1426,6 +1442,10 @@ def make_templates_for_alphafold(
             dummy_organism = 'human' # just used for avg cdr coords
             rep_dgeoms, rep_dgeom_indices = docking_geometry.pick_docking_geometry_reps(
                 dummy_organism, dgeoms, num_runs*num_templates_per_run)
+    elif use_opt_dgeoms:
+        rep_dgeoms = docking_geometry.load_opt_dgeoms(mhc_class)
+        assert len(rep_dgeoms) == 4
+        rep_dgeom_indices = None
     else:
 
         dgeom_info = ternary_info[ternary_info.mhc_class == mhc_class]
@@ -1470,6 +1490,9 @@ def make_templates_for_alphafold(
                 dgeom_info = dgeom_info_by_chain[chain]
                 dgeom_row = dgeom_info.iloc[itmp%dgeom_info.shape[0]]
                 dgeom = DockingGeometry().from_dict(dgeom_row)
+            elif use_opt_dgeoms:
+                dgeom = rep_dgeoms[itmp]
+                dgeom_row = None
             else:
                 # order them this way so each run has diverse dgeoms...
                 dgeom_repno = (itmp*num_runs + run)%len(rep_dgeoms)
@@ -1619,7 +1642,7 @@ def make_templates_for_alphafold(
                 tcrb_v   =tcr_info.loc[(tcrb_pdbid,'B'), 'v_gene'],
                 tcrb_j   =tcr_info.loc[(tcrb_pdbid,'B'), 'j_gene'],
                 tcrb_cdr3=tcr_info.loc[(tcrb_pdbid,'B'), 'cdr3'],
-                dgeom_pdbid=dgeom_row.pdbid,
+                dgeom_pdbid=f'opt{itmp}' if dgeom_row is None else dgeom_row.pdbid,
                 template_pdbfile=outpdbfile,
                 target_to_template_alignstring=alignstring,
                 identities=identities,
@@ -1693,11 +1716,14 @@ def setup_for_alphafold(
         alt_self_peptides_column=None, # this column should be comma-separated
         exclude_pdbids_column=None, # this column should be comma-separated
         targetid_prefix_suffix='',
+        use_opt_dgeoms=False,
         **kwargs,
 ):
     '''
     '''
     assert outdir.endswith('/')
+    if use_opt_dgeoms:
+        assert num_runs == 1
     required_cols = 'va ja cdr3a vb jb cdr3b mhc_class mhc peptide'.split()
     if organism is None:
         required_cols.append('organism')
@@ -1795,6 +1821,7 @@ def setup_for_alphafold(
             num_runs = num_runs,
             alt_self_peptides=alt_self_peptides,
             exclude_pdbids = exclude_pdbids,
+            use_opt_dgeoms = use_opt_dgeoms,
             **kwargs,
         )
 

@@ -14,8 +14,8 @@ from . import blast
 from . import sequtil
 from . import pdblite
 
-from .util import path_to_db
 from .blast import path_to_blast_executables
+from .util import path_to_db
 from .sequtil import ALL_GENES_GAP_CHAR
 
 NUM_MHC_CORE_POSITIONS = 12
@@ -43,7 +43,9 @@ class2_alfas_positions_0indexed = {
 }
 
 def get_mhc_core_positions_class1(seq):
-    ''' will have -1 if there's a parse fail
+    ''' These are 0-indexed positions (unlike previous tcrdock)
+
+    will have -1 if there's a parse fail
     '''
     al = sequtil.blosum_align(class1_template_seq, seq)
 
@@ -59,7 +61,9 @@ def get_mhc_core_positions_class2(
         aseq, # chain 1 ie alpha
         bseq, # chain 2 ie beta
 ):
-    ''' will have -1 if there's a parse fail
+    ''' these are 0-indexed positions!!! (unlike previous tcrdock)
+
+    will have -1 if there's a parse fail
     '''
     offset = 0
     core_positions = []
@@ -69,7 +73,8 @@ def get_mhc_core_positions_class2(
         hits = blast.blast_sequence_and_read_hits(seq, dbfile)
         hit = hits.iloc[0]
         blast_align = blast.setup_query_to_hit_map(hit)
-        #print('get_mhc_core_positions_class2:', ab, hit.saccver, hit.pident)
+        if hit.pident<99.99:
+            print('get_mhc_core_positions_class2:', ab, hit.saccver, hit.pident)
 
         alfas = sequtil.mhc_class_2_alfas[ab][hit.saccver]
         hitseq = alfas.replace(ALL_GENES_GAP_CHAR, '')
@@ -134,6 +139,12 @@ def get_mhc_stub(
         180 degree rotation relating one side of the beta sheet to the other
         and points toward the peptide
     the stub z-axis points from one half of the beta sheet to the other
+
+    (see superimpose.get_symmetry_stub_from_positions)
+
+    returns a stub aka
+    dict {'axes':numpy array with axes as ROW vectors,
+          'origin': vector}
 
     '''
 

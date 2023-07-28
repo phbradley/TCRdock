@@ -6,8 +6,6 @@ from os import system, popen
 from os.path import exists
 from pathlib import Path
 import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib.colors
 
 path_to_tcrdock = Path(__file__).parent
 assert os.path.isdir( path_to_tcrdock )
@@ -65,6 +63,11 @@ def read_fields(filename):
 # still not quite right for gray, and the bright_first option doesnt work...
 #
 def categorical_cmap(nc, nsc, cmap="tab10", continuous=False, bright_first=True):
+    # I don't think this is used anywhere
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    import matplotlib.colors
     if nc > plt.get_cmap(cmap).N:
         raise ValueError("Too many categories for colormap.")
     if continuous:

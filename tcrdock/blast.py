@@ -26,13 +26,14 @@ def make_blast_dbs(fastafile, dbtype='prot'):
 def check_for_blast_dbs(fastafile):
     return exists(str(fastafile)+'.phr')
 
-def blast_sequence_and_read_hits(
-        query_sequence,
-        dbfile, # str or Path
-        tmpfile_prefix = '',
+def blast_file_and_read_hits(
+        fname,
+        dbfile,
         evalue = 1e-3,
         num_alignments = 10000,
         verbose=False,
+        clobber=False,
+        extra_blast_args=''
 ):
     assert exists(dbfile), f'missing file for BLAST-ing against: {dbfile}'
 
@@ -43,14 +44,10 @@ def blast_sequence_and_read_hits(
         make_blast_dbs(dbfile)
         assert check_for_blast_dbs(dbfile), 'Failed to create blast db files!'
 
-    tmpfile = f'{tmpfile_prefix}tmp_fasta_{random.random()}.fasta'
-    out = open(tmpfile, 'w')
-    out.write(f'>tmp\n{query_sequence}\n')
-    out.close()
+    outfile = fname+'.blast'
+    assert clobber or not exists(outfile)
 
-    outfile = tmpfile+'.blast'
-
-    cmd = (f'{blastp_exe} -query {tmpfile} -db {dbfile}'
+    cmd = (f'{blastp_exe} -query {fname} -db {dbfile} {extra_blast_args} '
            f' -outfmt "10 delim=, {blast_fields}" -evalue {evalue}'
            f' -num_alignments {num_alignments} -out {outfile}')
 
@@ -66,9 +63,31 @@ def blast_sequence_and_read_hits(
     #blast_hits.rename(columns={'saccver':'pdb_chain', 'qaccver':'allele'}, inplace = True)
     #blast_hits.sort_values('pident', ascending=False, inplace=True)
 
-    for filename in [tmpfile, outfile]:
-        if exists(filename):
-            remove(filename)
+    if exists(outfile):
+        remove(outfile)
+
+    return blast_hits
+
+
+def blast_sequence_and_read_hits(
+        query_sequence,
+        dbfile,
+        tmpfile_prefix = '',
+        evalue = 1e-3,
+        num_alignments = 10000,
+        verbose=False,
+):
+    tmpfile = f'{tmpfile_prefix}tmp_fasta_{random.random()}.fasta'
+
+    out = open(tmpfile, 'w')
+    out.write(f'>tmp\n{query_sequence}\n')
+    out.close()
+
+    blast_hits = blast_file_and_read_hits(
+        tmpfile, dbfile, evalue, num_alignments, verbose, clobber=True)
+
+    if exists(tmpfile):
+        remove(tmpfile)
 
     return blast_hits
 

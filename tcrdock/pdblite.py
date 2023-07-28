@@ -16,6 +16,7 @@ def load_pdb_coords(
         preserve_atom_name_whitespace=False,
         require_CA=False,
         require_bb=False,
+        ignore_altloc=True,
 ):
     ''' returns: chains, all_resids, all_coords, all_name1s
     '''
@@ -34,7 +35,7 @@ def load_pdb_coords(
                 #print('stopping ENDMDL:', pdbfile)
                 break
             if (line[:6] in ['ATOM  ','HETATM'] and line[17:20] != 'HOH' and
-                line[16] in ' A1'):
+                (ignore_altloc or line[16] in ' A1')):
                 if line[17:20] in long2short_MSE:
                     resid = line[22:27]
                     chain = line[21]
@@ -54,19 +55,25 @@ def load_pdb_coords(
                         all_coords[chain][resid] = OrderedDict()
                         all_name1s[chain][resid] = long2short_MSE[line[17:20]]
 
-                    all_coords[chain][resid][atom] = np.array(
-                        [float(line[30:38]), float(line[38:46]), float(line[46:54])])
+                    if atom in all_coords[chain][resid]:
+                        print('WARNING: take first xyz for atom, ignore others:',
+                              chain, resid, atom, 'altloc:', line[16],
+                              pdbfile)
+                    else:
+                        all_coords[chain][resid][atom] = np.array(
+                            [float(line[30:38]),float(line[38:46]), float(line[46:54])])
                 else:
                     if verbose or line[12:16] == ' CA ':
                         print('skip ATOM line:', line[:-1], pdbfile)
                     skipped_lines = True
 
     # possibly subset to residues with CA
-    N, CA, C  = ' N  ', ' CA ', ' C  '
+    if preserve_atom_name_whitespace:
+        N, CA, C  = ' N  ', ' CA ', ' C  '
+    else:
+        N, CA, C = 'N', 'CA', 'C'
     require_atoms = [N,CA,C] if require_bb else [CA] if require_CA else []
     if require_atoms:
-        if not preserve_atom_name_whitespace:
-            require_atoms = [x.strip() for x in require_atoms]
         chains = all_resids.keys()
         for chain in chains:
             bad_resids = [x for x,y in all_coords[chain].items()
@@ -85,8 +92,8 @@ def load_pdb_coords(
         for res1, res2 in zip(all_resids[chain][:-1], all_resids[chain][1:]):
             coords1 = all_coords[chain][res1]
             coords2 = all_coords[chain][res2]
-            if 'C' in coords1 and 'N' in coords2:
-                dis = np.sqrt(np.sum(np.square(coords1['C']-coords2['N'])))
+            if C in coords1 and N in coords2:
+                dis = np.sqrt(np.sum(np.square(coords1[C]-coords2[N])))
                 if dis>maxdis:
                     if verbose or not allow_chainbreaks:
                         print('ERROR chainbreak:', chain, res1, res2, dis, pdbfile)
@@ -254,7 +261,10 @@ def update_derived_data(pose):
     chainseq = '/'.join(chainseq[c] for c in chains)
 
     assert len(chainbounds) == len(chains) + 1 # 0 at the beginning, N at the end
-    pose['ca_coords'] = np.stack([coords[r][CA] for r in resids])
+    if resids:
+        pose['ca_coords'] = np.stack([coords[r][CA] for r in resids])
+    else: # empty
+        pose['ca_coords'] = []
     pose['chains'] = chains
     pose['chainseq'] = chainseq
     pose['chainbounds'] = chainbounds
@@ -329,7 +339,7 @@ def apply_transform_Rx_plus_v(pose, R, v):
     return update_derived_data(pose)
 
 def delete_chains(pose, chain_nums):
-    '''
+    ''' doesn't necessarily copy all the old data
     '''
     del_chains = [pose['chains'][c] for c in chain_nums]
 
@@ -378,3 +388,45 @@ def append_chains(pose, src_pose, src_chain_nums):
 
 
 
+def delete_residue_range(pose, start, stop):
+    ''' returns a new pose (that might share some data)
+
+    deletes start through stop, inclusive of start but NOT stop!!!!!!!!!!!!
+
+    start and stop are 0-indexed
+
+    '''
+
+    newpose = {
+        'coords': pose['coords'],
+        'sequence': pose['sequence'][:start] + pose['sequence'][stop:],
+        'resids': pose['resids'][:start] + pose['resids'][stop:],
+    }
+
+    return update_derived_data(newpose)
+
+
+def find_chainbreaks(pose, maxdis = 1.75, verbose=False):
+    ''' assumes atom names have the usual PDB extra whitespace in them
+    '''
+    N, C  = ' N  ', ' C  '
+
+    resids, coords = pose['resids'], pose['coords']
+    chainbreaks = []
+    for i, r1 in enumerate(resids[:-1]):
+        r2 = resids[i+1]
+        if r1[0] == r2[0]:
+            if C in coords[r1] and N in coords[r2]:
+                dis = np.sqrt(np.sum(np.square(coords[r1][C]-coords[r2][N])))
+                if dis >= maxdis:
+                    chainbreaks.append(i)
+                    if verbose:
+                        print('found intra-chain chainbreak:', r1, r2,
+                              dis,'>',maxdis)
+            else:
+                if C not in coords[r1]:
+                    print('missing C atom', r1)
+                if N not in coords[r2]:
+                    print('missing N atom', r2)
+
+    return chainbreaks
