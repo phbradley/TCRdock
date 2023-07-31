@@ -46,6 +46,10 @@ def get_designable_positions(
 ):
     ''' the unaligned position plus extend_flex rsds on either side of each contig
     '''
+    if hasattr(row, 'designable_positions'):
+        posl = [int(x) for x in row.designable_positions.split(',')]
+        return posl
+
     if alignstring is None:
         alignstring = row.template_0_target_to_template_alignstring
 

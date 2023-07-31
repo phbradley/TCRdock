@@ -129,10 +129,13 @@ def run_mpnn(
     targets has to have the columns below
 
     '''
-    required_cols = ('targetid chainseq template_0_target_to_template_alignstring '
-                     ' model_pdbfile'.split())
+    required_cols = 'targetid chainseq model_pdbfile'.split()
     for col in required_cols:
         assert col in targets.columns
+
+    # need one of these to figure out which positions are designable
+    assert ('template_0_target_to_template_alignstring' in targets.columns or
+            'designable_positions' in targets.columns)
 
     outdir = outprefix+'_mpnn/'
     if not exists(outdir):
@@ -187,6 +190,7 @@ def run_mpnn(
         design_mask = np.full((nres,), False)
         design_mask[flex_posl] = True
         cs = l.chainseq.split('/')
+        old_fullseq = ''.join(cs)
         chainbounds = [0] + list(it.accumulate(len(x) for x in cs))
 
         fastafile = f'{outdir}/seqs/{l.targetid}.fa'
@@ -209,8 +213,23 @@ def run_mpnn(
             assert all(((a==b) or c)
                        for a,b,c in zip(old_seq, top_seq, design_mask[start:]))
             cs[ch] = top_seq
+
+        new_fullseq = ''.join(cs)
         outl = l.copy()
         outl['chainseq'] = '/'.join(cs) # update with designed sequence
+
+        ## update cdr3 information in the output row
+        if hasattr(l, 'cdr3a'):
+            assert old_fullseq.count(l.cdr3a) == 1
+            start = old_fullseq.index(l.cdr3a)
+            new_cdr3a = new_fullseq[start:start+len(l.cdr3a)]
+            outl['cdr3a'] = new_cdr3a
+
+            assert old_fullseq(l.cdr3b)
+            start = old_fullseq.index(l.cdr3b)
+            new_cdr3b = new_fullseq[start:start+len(l.cdr3b)]
+            outl['cdr3b'] = new_cdr3b
+
         dfl.append(outl)
 
     targets = pd.DataFrame(dfl)

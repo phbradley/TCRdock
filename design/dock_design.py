@@ -116,6 +116,17 @@ td2.sequtil.setup_for_alphafold(
 targets = pd.read_table(outdir+'targets.tsv')
 targets.rename(columns={'target_chainseq':'chainseq',
                         'templates_alignfile':'alignfile'}, inplace=True)
+dfl = []
+for l in targets.itertuples():
+    seq = l.chainseq.replace('/','')
+    posl = []
+    for s in [l.cdr3a, l.cdr3b]:
+        assert seq.count(s) == 1
+        start = seq.index(s)
+        posl.extend(range(start+nterm_seq_stem, start+len(s)-cterm_seq_stem))
+    dfl.append(','.join([str(x) for x in posl]))
+targets['designable_positions'] = dfl
+
 
 # run alphafold
 outprefix = f'{args.outfile_prefix}_afold1'
@@ -128,7 +139,7 @@ targets = run_alphafold(
 
 # run mpnn
 outprefix = f'{outfile_prefix}_mpnn'
-targets = run_mpnn(targets, outprefix, extend_flex=args.extend_flex)
+targets = run_mpnn(targets, outprefix, extend_flex='barf')
 
 # run alphafold again
 outprefix = f'{outfile_prefix}_afold2'
@@ -140,7 +151,7 @@ targets = run_alphafold(
 )
 
 # compute stats
-targets = compute_stats(targets, extend_flex=args.extend_flex)
+targets = compute_stats(targets, extend_flex='barf')
 
 # write results
 targets.to_csv(f'{outfile_prefix}_final_results.tsv', sep='\t', index=False)
