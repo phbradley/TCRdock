@@ -48,7 +48,7 @@ def get_designable_positions(
     '''
     if hasattr(row, 'designable_positions'):
         posl = [int(x) for x in row.designable_positions.split(',')]
-        return posl
+        return sorted(posl) # want sorted!
 
     if alignstring is None:
         alignstring = row.template_0_target_to_template_alignstring
@@ -200,6 +200,74 @@ def compute_stats(
         outl['peptide_loop_pae'] = 0.5*(
             paes[b:c,:][:,mod_flex_posl].mean() +
             paes[mod_flex_posl,:][:,b:c].mean())
+
+        dfl.append(outl)
+
+
+    targets = pd.DataFrame(dfl)
+
+    return targets
+
+def compute_simple_stats(
+        targets,
+        extend_flex=1,
+):
+    ''' Not assuming a single 'native' template
+
+    stats:
+
+    loop_plddt
+    loop_seq
+    loop_seq2
+    peptide
+    peptide_plddt
+    peptide_loop_pae
+    pmhc_tcr_pae
+
+    '''
+    required_cols = ('chainseq model_plddtfile model_paefile'.split())
+    for col in required_cols:
+        assert col in targets.columns, f'Need {col} column in targets df'
+
+    dfl = []
+    for _, l in targets.iterrows():
+        sequence = l.chainseq.replace('/','')
+        nres = len(sequence)
+        cbs = [0]+list(it.accumulate(len(x) for x in l.chainseq.split('/')))
+        chain_number = np.zeros((nres,), dtype=int)
+        for pos in cbs[1:-1]:
+            chain_number[pos:] += 1
+        num_chains = len(cbs)-1
+        assert chain_number[0] == 0 and chain_number[-1] == num_chains-1
+
+        assert l.mhc_class + 3 == num_chains
+        nres_mhc, nres_pmhc = cbs[-3:-1]
+        flex_posl = get_designable_positions(row=l, extend_flex=extend_flex)
+
+        plddts = np.load(l.model_plddtfile)[:nres]
+        paes = np.load(l.model_paefile)[:nres,:][:,:nres]
+
+        # actually two loops:
+        loop_seq = ''.join(sequence[x] for x in flex_posl)
+
+        loop_seq2 = sequence[flex_posl[0]]
+        for i,j in zip(flex_posl[:-1], flex_posl[1:]):
+            if chain_number[i] != chain_number[j]:
+                loop_seq2 += '/'
+            loop_seq2 += sequence[j]
+
+        outl = l.copy()
+        outl['loop_plddt'] = plddts[flex_posl].mean()
+        outl['loop_seq'] = loop_seq
+        outl['loop_seq2'] = loop_seq2
+        outl['peptide'] = l.chainseq.split('/')[-3]
+        outl['peptide_plddt'] = plddts[nres_mhc:nres_pmhc].mean()
+        outl['peptide_loop_pae'] = 0.5*(
+            paes[nres_mhc:nres_pmhc,:][:,flex_posl].mean() +
+            paes[flex_posl,:][:,nres_mhc:nres_pmhc].mean())
+        outl['pmhc_tcr_pae'] = 0.5*(
+            paes[:nres_pmhc,:][:,nres_pmhc:].mean() +
+            paes[nres_pmhc:,:][:,:nres_pmhc].mean())
 
         dfl.append(outl)
 

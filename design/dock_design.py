@@ -36,15 +36,15 @@ from os import mkdir
 import random
 from collections import Counter
 
-from design_stats import compute_stats
+from design_stats import compute_simple_stats
 from wrapper_tools import run_alphafold, run_mpnn
 
 
 ## hard-coded
 nterm_seq_stem = 3
 cterm_seq_stem = 2
-nterm_align_stem = 4
-cterm_align_stem = 3
+#nterm_align_stem = 4
+#cterm_align_stem = 3
 force_native_seq_stems = True # since these aren't being designed...
 ## defaults ##########
 
@@ -151,7 +151,7 @@ targets = run_alphafold(
 )
 
 # compute stats
-targets = compute_stats(targets, extend_flex='barf')
+targets = compute_simple_stats(targets, extend_flex='barf')
 
 # write results
 targets.to_csv(f'{outfile_prefix}_final_results.tsv', sep='\t', index=False)
