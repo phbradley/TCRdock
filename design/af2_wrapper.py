@@ -240,6 +240,13 @@ for counter, targetl in targets.iterrows():
         else:
             alt_template_sequence = np.nan
 
+        if not (pd.isna(target_len) or target_len == num_res):
+            print('target_len:', target_len, 'num_res:', num_res)
+            print('target:')
+            print(targetl)
+            print('align:')
+            print(line)
+
         assert pd.isna(target_len) or target_len == num_res
 
         chains_tmp, all_resids_tmp, all_coords_tmp, all_name1s_tmp = load_pdb_coords(

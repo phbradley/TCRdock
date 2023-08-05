@@ -14,7 +14,8 @@ parser.add_argument('--pmhc_targets', required=True)
 parser.add_argument('--outfile_prefix', required=True)
 parser.add_argument('--allow_mhc_mismatch', action='store_true')
 parser.add_argument('--num_recycle', type=int, default=3)
-parser.add_argument('--model_name', 'model_2_ptm_ft')
+parser.add_argument('--random_state', type=int)
+parser.add_argument('--model_name', default='model_2_ptm_ft')
 parser.add_argument(
     '--model_params_file',
     default=('/home/pbradley/csdat/tcrpepmhc/amir/ft_params/'
@@ -69,16 +70,19 @@ big_tcrs_df = big_tcrs_df[~badmask]
 
 targets_dfl = []
 
-pmhcs = pmhc_targets.sample(n=num_designs, replace=True)
-cdr3s = big_tcrs_df.sample(n=num_designs, replace=True)
+pmhcs = pmhc_targets.sample(n=args.num_designs, replace=True,
+                            random_state=args.random_state)
+cdr3s = big_tcrs_df.sample(n=args.num_designs, replace=True,
+                           random_state=args.random_state)
 
-for lpmhc, lcdr3 in zip(pmhcs.itertuples(), cdr3s.itertuples()):
+dfl = []
+for (_,lpmhc), lcdr3 in zip(pmhcs.iterrows(), cdr3s.itertuples()):
 
     # look for tcrs with the same allele
     templates = td2.sequtil.ternary_info.copy()
     if not args.allow_mhc_mismatch:
         templates = templates[(templates.mhc_class==lpmhc.mhc_class)&
-                              (templates.mhc==lpmhc.mhc)]
+                              (templates.mhc_allele==lpmhc.mhc)]
         if templates.shape[0] == 0:
             print('no matching templates found for mhc:',
                   lpmhc.mhc)
@@ -110,7 +114,7 @@ if not exists(outdir):
     mkdir(outdir)
 
 td2.sequtil.setup_for_alphafold(
-    tcrs, outdir, num_runs=1, use_opt_dgeoms=True,
+    tcrs, outdir, num_runs=1, use_opt_dgeoms=True, clobber=True,
 )
 
 targets = pd.read_table(outdir+'targets.tsv')
@@ -129,31 +133,33 @@ targets['designable_positions'] = dfl
 
 
 # run alphafold
-outprefix = f'{args.outfile_prefix}_afold1'
+outprefix = f'{outdir}_afold1'
 targets = run_alphafold(
     targets, outprefix,
     num_recycle = args.num_recycle,
     model_name = args.model_name,
     model_params_file = args.model_params_file,
+    #dry_run = True,
 )
 
 # run mpnn
-outprefix = f'{outfile_prefix}_mpnn'
+outprefix = f'{outdir}_mpnn'
 targets = run_mpnn(targets, outprefix, extend_flex='barf')
 
 # run alphafold again
-outprefix = f'{outfile_prefix}_afold2'
+outprefix = f'{outdir}_afold2'
 targets = run_alphafold(
     targets, outprefix,
     num_recycle=args.num_recycle,
     model_name = args.model_name,
     model_params_file = args.model_params_file,
+    ignore_identities = True,
 )
 
 # compute stats
 targets = compute_simple_stats(targets, extend_flex='barf')
 
 # write results
-targets.to_csv(f'{outfile_prefix}_final_results.tsv', sep='\t', index=False)
+targets.to_csv(f'{args.outfile_prefix}_final_results.tsv', sep='\t', index=False)
 
 print('DONE')

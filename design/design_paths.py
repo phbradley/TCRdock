@@ -1,5 +1,5 @@
 # change these as needed
-FRED_HUTCH_HACKS = False
+FRED_HUTCH_HACKS = True
 if FRED_HUTCH_HACKS:
     AF2_PYTHON = '/home/pbradley/anaconda2/envs/af2/bin/python'
     PYROSETTA_PYTHON = '/home/pbradley/anaconda2/envs/pyrosetta36/bin/python'
