@@ -10,9 +10,11 @@ from . import tcr_distances
 from . import util
 from . import tcr_sampler ## for analyze_junction
 
+from .convert_svg_to_png import MONOSPACE_FONT_FAMILY, convert_svg_to_png
+
 junction_bars = True
 
-font_family = MONOSPACE_FONT_FAMILY # in basic, from ../convert_svg_to_png.py
+font_family = MONOSPACE_FONT_FAMILY #  ./convert_svg_to_png.py
 
 greek_alpha = 'A'
 greek_beta  = 'B'

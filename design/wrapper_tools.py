@@ -4,9 +4,10 @@ from collections import Counter
 import pandas as pd
 import numpy as np
 import design_paths
+import design_stats
 design_paths.setup_import_paths()
 import tcrdock as td2
-from os import system, mkdir
+from os import system, mkdir, remove
 from os.path import exists
 import itertools as it
 import json
@@ -127,6 +128,7 @@ def run_mpnn(
         outprefix,
         num_mpnn_seqs=3,
         extend_flex=1,
+        dry_run=False,
 ):
     ''' Returns results df
 
@@ -184,7 +186,8 @@ def run_mpnn(
            f' --seed 37 --batch_size 1 > {outprefix}_run.log '
            f' 2> {outprefix}_run.err')
     print(cmd, flush=True)
-    system(cmd)
+    if not dry_run:
+        system(cmd)
 
     # now setup new targets array with redesigned sequences
     dfl = []
@@ -204,8 +207,12 @@ def run_mpnn(
         assert len(seqs) == num_mpnn_seqs
         seq_counts = Counter(seqs)
         _, top_count = seq_counts.most_common(1)[0]
-        top_seq = random.choice([x for x,y in seq_counts.most_common()
-                                 if y==top_count])
+        if dry_run: # hacking!!!
+            top_seq = [x for x,y in seq_counts.most_common()
+                       if y==top_count][0]
+        else:
+            top_seq = random.choice([x for x,y in seq_counts.most_common()
+                                     if y==top_count])
         top_seqs = top_seq.split('/')
         def seq_match_score(seq1, seq2):
             return 100*abs(len(seq1)-len(seq2)) + sum(x!=y for x,y in zip(seq1,seq2))
@@ -238,4 +245,280 @@ def run_mpnn(
 
     targets = pd.DataFrame(dfl)
     return targets # same as starting targets except for chainseq column
+
+
+
+def encode_target_for_rf_ab(
+        pmhc_pose,
+        va_seq,
+        vb_seq,
+        ):
+
+    from rf_ab_chemical import aa2long, one_letter
+    aa2int = {aa:i for i,aa in enumerate(one_letter)}
+    cbs = pmhc_pose['chainbounds']
+    assert len(cbs) in [3,4]
+    mhc_class = len(cbs) - 2
+    nres_mhc = cbs[-2]
+    nres = cbs[-1]
+    nres_peptide = cbs[-1] - cbs[-2]
+
+    #In [36]: info.keys()
+    #Out[36]: dict_keys(['T', 'Hseq', 'Lseq', 'hotspots'])
+    # based on xtal_3qiu encoding, Hseq is the alpha chain and Lseq is the beta chain
+    info = {'Hseq':va_seq, 'Lseq':vb_seq, 'hotspots':[False]*nres}
+
+    #In [26]: info['T'].keys()
+    #Out[26]: dict_keys(['xyz', 'seq', 'pdb_idx', 'idx', 'cdr_bool', 'mask'])
+    tinfo = {}
+    tinfo['idx'] = list(range(nres))
+    if mhc_class==1:
+        chains = ['A']*nres_mhc + ['B']*nres_peptide
+    else:
+        chains = ['A']*cbs[1] + ['B']*(cbs[2]-cbs[1]) + ['C']*nres_peptide
+    tinfo['pdb_idx'] = list(zip(chains, map(str, tinfo['idx'])))
+    tinfo['cdr_bool'] = [False]*nres
+    tinfo['seq'] = [aa2int[x] for x in pmhc_pose['sequence']]
+    tinfo['xyz'] = []
+    tinfo['mask'] = []
+    for ii, (r,aa) in enumerate(zip(pmhc_pose['resids'], pmhc_pose['sequence'])):
+        iaa = aa2int[aa]
+        atom_names = aa2long[iaa]
+        assert len(atom_names) == 27
+        ii_xyz = [[np.nan, np.nan, np.nan] for _ in range(len(atom_names))]
+        ii_mask = [False]*len(atom_names)
+        for atom, v in pmhc_pose['coords'][r].items():
+            if atom in atom_names:
+                idx = atom_names.index(atom)
+                for k in range(3):
+                    ii_xyz[idx][k] = v[k]
+                ii_mask[idx] = True
+            else:
+                print('unrecognized atom_name:', atom, aa)
+        tinfo['xyz'].append(ii_xyz)
+        tinfo['mask'].append(ii_mask)
+
+    info['T'] = tinfo
+    return info
+
+
+
+
+def run_rf_antibody_on_designs(
+        targets,
+        outprefix,
+        # useful if mpnn made chainseq, pdbseq is old:
+        allow_pdb_chainseq_mismatch_for_tcr=False,
+        dry_run = False,
+        delete_old_results = False,
+):
+    required_cols = 'targetid chainseq model_pdbfile'.split()
+    for col in required_cols:
+        assert col in targets.columns
+
+    assert targets.targetid.value_counts().max()==1 # unique
+
+    model = ('/home/pbradley/gitrepos/rf_antibody/models/'
+             'May23_noframework_nosidechains_H3swap/RFab__RFab_ab_best_May10.pt')
+    assert exists(model)
+    assert exists(design_paths.RFAB_PYTHON)
+    assert exists(design_paths.RFAB_SCRIPT)
+
+    all_info = {}
+    for l in targets.itertuples():
+        print('encode:', l.targetid)
+        pose = td2.pdblite.pose_from_pdb(l.model_pdbfile)
+        #assert len(pose['chains']) == 1 # not if coming from rf_ab_diff pipeline?
+        cs = l.chainseq.split('/')
+        chainbounds = [0] + list(it.accumulate(len(x) for x in cs))
+        if not allow_pdb_chainseq_mismatch_for_tcr:
+            assert pose['sequence'] == ''.join(cs)
+        else:
+            nres_pmhc = chainbounds[-3]
+            assert pose['sequence'][:nres_pmhc] == ''.join(cs)[:nres_pmhc]
+
+        pose = td2.pdblite.set_chainbounds_and_renumber(pose, chainbounds)
+        nchains = len(pose['chains'])
+        pmhc_pose = td2.pdblite.delete_chains(pose, [nchains-2, nchains-1])
+
+        info = encode_target_for_rf_ab(pmhc_pose, cs[-2], cs[-1])
+        all_info[l.targetid] = info
+
+
+    outdir = outprefix+'_rfab/'
+    if not exists(outdir):
+        mkdir(outdir)
+
+    outfile = f'{outdir}rfab_targets.json'
+    with open(outfile, 'w') as f:
+        f.write(json.dumps(all_info)+'\n')
+    print('made:', outfile)
+
+    if delete_old_results:
+        for targetid in targets.targetid:
+            pdbfile = f'{outdir}{targetid}_best.pdb'
+            if exists(pdbfile):
+                print('WARNING removing old rf_antibody pdbfile:', pdbfile)
+                remove(pdbfile)
+            resfile = f'{outdir}{targetid}.npz' # results
+            if exists(resfile):
+                print('WARNING removing old rf_antibody resfile:', resfile)
+                remove(pdbfile)
+
+
+
+    cmd = (f'{design_paths.RFAB_PYTHON} {design_paths.RFAB_SCRIPT} '
+           f' --model_path {model} --mask_ab_sidechains --mask_target_sidechains '
+           f' --num_recycles 10 --max_crop 1000 --output_path {outdir} '
+           f' --sequence_json {outfile} > {outprefix}.log 2> {outprefix}.err')
+    print(cmd)
+    if not dry_run:
+        system(cmd)
+
+
+    dfl = []
+    for _, l in targets.iterrows():
+        pdbfile = f'{outdir}{l.targetid}_best.pdb'
+        resfile = f'{outdir}{l.targetid}.npz' # results
+        assert exists(pdbfile) and exists(resfile), \
+            f'rf_antibody failed for target: {l.targetid}'
+
+        res = np.load(resfile)
+
+        pose = td2.pdblite.pose_from_pdb(pdbfile)
+        assert pose['sequence'] == l.chainseq.replace('/','')
+
+        cbs = [0] + list(it.accumulate(len(x) for x in l.chainseq.split('/')))
+
+        pose = td2.pdblite.set_chainbounds_and_renumber(pose, cbs)
+        outl = l.copy()
+        outl['old_model_pdbfile'] = l.model_pdbfile
+        outl['model_pdbfile'] = pdbfile
+
+        outl['rfab_pbind'] = res['p_bind'][0]
+        outl['rfab_pmhc_tcr_pae'] = res['pae_interaction']
+
+        dginfo = design_stats.compute_docking_geometry_info(l, pose=pose)
+        if dginfo is not None:
+            for k,v in dginfo.items():
+                outl[k] = v
+
+        dfl.append(outl)
+
+    results = pd.DataFrame(dfl)
+    return results
+
+def setup_rf_diff_tcr_template(pdbid):
+    ''' returns:
+
+    tcr_template_pdbfile, design_loops
+
+    design_loops looks like ['H1:5', 'H2:6', 'H3:15', 'L1:4', 'L2:7', 'L3:18']
+
+    note that H is TCR alpha chain and L is TCR beta chain !!
+
+    '''
+    outfile = f'{td2.util.path_to_db}/rf_diff_templates/{pdbid}_tcr.pdb'
+
+    row = td2.sequtil.ternary_info.loc[pdbid]
+    print('setup_rf_diff_tcr_template:', pdbid, outfile)
+
+    pdbfile = str(td2.util.path_to_db / row.pdbfile)
+    pose = td2.pdblite.pose_from_pdb(pdbfile)
+
+    tdifile = pdbfile+'.tcrdock_info.json'
+    with open(tdifile, 'r') as f:
+        tdinfo = td2.tcrdock_info.TCRdockInfo().from_string(f.read())
+
+    nres_pmhc = pose['chainbounds'][2]
+    tdinfo.delete_residue_range(0, nres_pmhc)
+    pose = td2.pdblite.delete_chains(pose, [0,1])
+    _, nres_tcra, nres = pose['chainbounds']
+
+    resids = ([('H', f'{i:4d} ') for i in range(1, nres_tcra+1)]+
+              [('L', f'{i:4d} ') for i in range(nres_tcra+1, nres+1)])
+    coords = {newr: pose['coords'][oldr]
+              for oldr, newr in zip(pose['resids'], resids)}
+    pose['resids'] = resids
+    pose['coords'] = coords
+    pose = td2.pdblite.update_derived_data(pose)
+
+    if not exists(outfile):
+        td2.pdblite.dump_pdb(pose, outfile)
+        print('made:', outfile)
+        out = open(outfile, 'a')
+    else:
+        out = None
+
+    design_loops = []
+    for ii, loop in enumerate(tdinfo.tcr_cdrs):
+        if ii in [2,6]:
+            continue
+        hl = 'H' if ii<4 else 'L'
+        num = ii%4 + 1
+        if num == 4:
+            num = 3
+        if out is not None:
+            for pos in range(loop[0], loop[1]+1):
+                out.write(f'REMARK PDBinfo-LABEL: {pos+1:4d} {hl}{num}\n')
+        print('cdr', hl, num, pose['sequence'][loop[0]:loop[1]+1])
+
+        looplen = loop[1]-loop[0]+1
+        design_loops.append(f'{hl}{num}:{looplen}')
+
+    if out is not None:
+        out.close()
+
+    return outfile, design_loops
+
+
+def setup_rf_diff_pmhc_template(pdbid, n_hotspot=3):
+    ''' returns
+
+    pdbfile, hotspot_string
+    '''
+
+    outfile = f'{td2.util.path_to_db}/rf_diff_templates/{pdbid}_pmhc.pdb'
+
+    row = td2.sequtil.ternary_info.loc[pdbid]
+    cbs = [0]+list(it.accumulate(len(x) for x in row.chainseq.split('/')))
+    assert len(cbs) == row.mhc_class + 4 # == num_chains + 1
+    nres_mhc = cbs[-4]
+
+    # 1-indexed numbers
+    # start at the fourth peptide position (skip the first 3)
+    hotspot_string = '[' + ','.join(f'T{nres_mhc+4+i}' for i in range(n_hotspot)) + ']'
+
+    if not exists(outfile):
+        # make target pdbfile
+        pdbfile = td2.util.path_to_db / row.pdbfile
+        pose = td2.pdblite.pose_from_pdb(pdbfile)
+        pose = td2.pdblite.delete_chains(pose, [2,3])
+        nres = len(pose['sequence'])
+        resids = [('T', f'{i:4d} ') for i in range(1, nres+1)]
+        coords = {newr: pose['coords'][oldr]
+                  for oldr, newr in zip(pose['resids'], resids)}
+        pose['resids'] = resids
+        pose['coords'] = coords
+        pose = td2.pdblite.update_derived_data(pose)
+
+        td2.pdblite.dump_pdb(pose, outfile)
+        print('made:', outfile)
+
+    return outfile, hotspot_string
+
+
+if __name__ == '__main__':
+
+    pdbids = ['1oga','3o4l','3gsn']
+
+    for pdbid in pdbids:
+        fname, design_loops = setup_rf_diff_tcr_template(pdbid)
+        print('design_loops:', pdbid, design_loops)
+
+
+        fname, hotspot_string = setup_rf_diff_pmhc_template(pdbid)
+        print('hotspot_string:', pdbid, hotspot_string)
+
+
 

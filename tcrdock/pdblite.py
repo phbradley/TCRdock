@@ -195,7 +195,8 @@ def save_pdb_coords(
             element = 'H' if a[0].isdigit() else a[0]
             occ=1.
             #                   6:12      12:16   17:20    21    22:27
-            outline = (f'ATOM  {counter:6d}{atom} {name3} {chain}{resid}   '
+            # oops screwed up the atom number position! bugfix: 2023-09-01
+            outline = (f'ATOM  {counter%100000:5d} {atom} {name3} {chain}{resid}   '
                        f'{xyz[0]:8.2f}{xyz[1]:8.2f}{xyz[2]:8.2f}{occ:6.2f}{bfac:6.2f}'
                        f'{element:>12s}\n')
             assert (outline[12:16] == atom and outline[17:20] == name3 and
@@ -231,7 +232,7 @@ def update_derived_data(pose):
 
     len(resids) == len(sequence)
     set(coords.keys()) == set(resids)
-    chain ids come in one contiguous block of resids
+    each chain id occurs in contiguous block of resids
     each (chain,resid) has N,CA,C, names = ' N  ', ' CA ', ' C  '
 
     sets up derived data:

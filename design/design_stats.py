@@ -9,6 +9,7 @@ import design_paths
 design_paths.setup_import_paths()
 import tcrdock as td2
 from tcrdock.tcrdist.amino_acids import amino_acids
+from tcrdock.docking_geometry import compute_docking_geometries_distance_matrix
 import pandas as pd
 import numpy as np
 import random
@@ -208,11 +209,181 @@ def compute_stats(
 
     return targets
 
+
+
+mhc_seq2core_positions = {}
+def get_mhc_core_positions_0x_cached(mhc_class, mhc_seq, verbose=True):
+    global mhc_seq2core_positions
+    # if mhc_class==2 mhc_seq is a tuple
+    if (mhc_class, mhc_seq)  not in mhc_seq2core_positions:
+        if verbose:
+            print('get mhc core:', mhc_class, mhc_seq)
+        if mhc_class==1:
+            posl = td2.mhc_util.get_mhc_core_positions_class1(mhc_seq)
+        else:
+            posl = td2.mhc_util.get_mhc_core_positions_class2(*mhc_seq)
+        mhc_seq2core_positions[(mhc_class,mhc_seq)] = posl
+
+    return mhc_seq2core_positions[(mhc_class, mhc_seq)]
+
+def get_model_tdinfo(
+        organism,
+        mhc_class,
+        mhc_allele,
+        cb_seq,
+        va,
+        ja,
+        cdr3a,
+        vb,
+        jb,
+        cdr3b,
+        verbose = True,
+):
+    ''' return tdinfo
+
+    meant to be faster than starting from sequences
+
+    but falls back on slow parsing if the tcr framework sequences dont match
+    expectation
+
+    '''
+    from tcrdock.sequtil import ALL_GENES_GAP_CHAR
+    from tcrdock.tcrdist.all_genes import all_genes
+    from tcrdock.tcrdist.parsing import parse_tcr_sequence
+
+    core_len = 13 # tcr core len
+
+    sequence = cb_seq.replace('/','')
+    nres = len(sequence)
+    *mhc_seqs, pep_seq, tcra_seq, tcrb_seq = cb_seq.split('/')
+    chainlens = [len(x) for x in cb_seq.split('/')]
+    assert mhc_class == len(mhc_seqs)
+
+    mhc_len = sum(chainlens[:-3])
+    pmhc_len = sum(chainlens[:-2])
+    pmhc_tcra_len = sum(chainlens[:-1])
+
+    tcra_prefix = td2.sequtil.get_v_seq_up_to_cys(organism, va)[:-1] # dont require Cys
+    tcrb_prefix = td2.sequtil.get_v_seq_up_to_cys(organism, vb)[:-1]
+
+    if tcra_seq.startswith(tcra_prefix) and tcrb_seq.startswith(tcrb_prefix):
+        # yay! we got a match to 'clean' model tcr seqs up to the Cys
+        tcr_core_positions = (
+            [x+pmhc_len      for x in td2.sequtil.get_core_positions_0x(organism, va)]+
+            [x+pmhc_tcra_len for x in td2.sequtil.get_core_positions_0x(organism, vb)])
+
+        tcr_cdrs = []
+        for v, seq, cdr3, offset in [[va, tcra_seq, cdr3a, pmhc_len],
+                                     [vb, tcrb_seq, cdr3b, pmhc_tcra_len]]:
+            g = all_genes[organism][v]
+            for gapcdr in g.cdrs[:3]+[cdr3]:
+                cdr = gapcdr.replace(ALL_GENES_GAP_CHAR,'')
+                if cdr != cdr3 and cdr in cdr3:
+                    # special wonky case
+                    start = seq[:seq.index(cdr3)].index(cdr) + offset
+                else:
+                    assert seq.count(cdr) == 1
+                    start = seq.index(cdr) + offset
+                tcr_cdrs.append([start, start+len(cdr)-1])
+    else:
+        # have to do it the slow and painful way
+        print('WARNING get_model_tdinfo: slow and painful tcr parsing')
+        aparse = parse_tcr_sequence(organism, 'A', tcra_seq)
+        bparse = parse_tcr_sequence(organism, 'B', tcrb_seq)
+        assert (aparse is not None) and (bparse is not None),\
+            'get_model_tdinfo tcr seq parsing failed!'
+        tcr_core_positions = (
+            [x+pmhc_len      for x in aparse['core_positions']]+
+            [x+pmhc_tcra_len for x in bparse['core_positions']]
+        )
+        tcr_cdrs = (
+            [(x+pmhc_len     , y+pmhc_len     ) for x,y in aparse['cdr_loops']]+
+            [(x+pmhc_tcra_len, y+pmhc_tcra_len) for x,y in bparse['cdr_loops']]
+        )
+
+
+    tcr_coreseq = ''.join(sequence[x] for x in tcr_core_positions)
+    cys_seq = tcr_coreseq[1]+tcr_coreseq[12]+tcr_coreseq[14]+tcr_coreseq[25]
+    if verbose or cys_seq != 'CCCC':
+        print('tcr_coreseq:', cys_seq, tcr_coreseq[:core_len], tcr_coreseq[core_len:])
+
+
+    mhc_seq = mhc_seqs[0] if mhc_class==1 else tuple(mhc_seqs)
+    mhc_core_positions_0x = get_mhc_core_positions_0x_cached(mhc_class, mhc_seq,
+                                                             verbose=False)
+
+    tdinfo = td2.tcrdock_info.TCRdockInfo().from_dict(
+        dict(organism = organism,
+             mhc_class = mhc_class,
+             mhc_allele = mhc_allele,
+             mhc_core = mhc_core_positions_0x,
+             pep_seq = pep_seq,
+             tcr = ((va, ja, cdr3a), (vb, jb, cdr3b)),
+             tcr_core = tcr_core_positions,
+             tcr_cdrs = tcr_cdrs,
+             valid = True,
+        ))
+
+    return tdinfo
+
+
+def compute_docking_geometry_info(l, pose=None):
+    ''' l is a Series
+
+    returns None if failure
+
+    otherwise returns dict with some info including dgeom_rmsd to prev dgeom if present
+    '''
+
+    # maybe compute docking geometry
+    required_cols = ('organism mhc_class mhc chainseq va ja cdr3a vb jb cdr3b').split()
+    if pose is None:
+        required_cols.append('model_pdbfile')
+
+    if not all(hasattr(l,x) for x in required_cols):
+        print('WARNING compute_docking_geometry_info missing required cols:',
+              [x for x in required_cols if not hasattr(l,x)])
+        outl = None
+    else:
+        tdinfo = get_model_tdinfo(
+            l.organism, l.mhc_class, l.mhc, l.chainseq,
+            l.va, l.ja, l.cdr3a, l.vb, l.jb, l.cdr3b, verbose=False,
+        )
+        cbs = [0] + list(it.accumulate(len(x) for x in l.chainseq.split('/')))
+        if pose is None:
+            pose = td2.pdblite.pose_from_pdb(l.model_pdbfile)
+        assert pose['sequence'] == l.chainseq.replace('/','')
+
+        pose = td2.pdblite.set_chainbounds_and_renumber(pose, cbs)
+
+        dgeom = td2.docking_geometry.get_tcr_pmhc_docking_geometry(pose, tdinfo)
+
+        dgcols = 'torsion d tcr_unit_y tcr_unit_z mhc_unit_y mhc_unit_z'.split()
+
+        outl = {}
+        if hasattr(l, dgcols[0]):
+            # already has docking geometry info, compute rmsd, save old info
+            old_dgeom = td2.docking_geometry.DockingGeometry().from_dict(l)
+            for col in dgcols:
+                outl['old_'+col] = l[col]
+            outl['dgeom_rmsd'] = compute_docking_geometries_distance_matrix(
+                [dgeom], [old_dgeom], organism=l.organism)[0,0]
+
+        for k,v in dgeom.to_dict().items():
+            outl[k] = v
+
+    return outl # either a dict or None
+
 def compute_simple_stats(
         targets,
         extend_flex=1,
 ):
     ''' Not assuming a single 'native' template
+
+    this assumes we can call:
+
+      flex_posl = get_designable_positions(row=l, extend_flex=extend_flex)
+
 
     stats:
 
@@ -269,8 +440,12 @@ def compute_simple_stats(
             paes[:nres_pmhc,:][:,nres_pmhc:].mean() +
             paes[nres_pmhc:,:][:,:nres_pmhc].mean())
 
+        # maybe compute docking geometry
+        dginfo = compute_docking_geometry_info(l)
+        if dginfo is not None:
+            for k,v in dginfo.items():
+                outl[k] = v
         dfl.append(outl)
-
 
     targets = pd.DataFrame(dfl)
 
@@ -329,3 +504,28 @@ def add_info_to_rescoring_row(l, model_name, extend_flex=1):
     outl['mask_char'] = mask_char
 
     return outl
+
+
+if __name__ == '__main__':
+    # testing
+
+    print('hello world')
+
+    tsvfile = ('/home/pbradley/csdat/tcrpepmhc/amir/'
+               'run368run369_results_design_scores.tsv')
+    targets = pd.read_table(tsvfile)
+
+    targets = targets.head(10)
+
+    targets = compute_simple_stats(targets)
+
+    targets = compute_simple_stats(targets)
+
+    if 0:
+        for _,l in targets.iterrows():
+            tdinfo = get_model_tdinfo(
+                l.organism, l.mhc_class, l.mhc, l.chainseq,
+                l.va, l.ja, l.cdr3a, l.vb, l.jb, l.cdr3b,
+            )
+
+            print(tdinfo)

@@ -1,13 +1,60 @@
-######################################################################################88
-# rebuild 1000s of random loops into BOTH CDRs at the same time
-# allow variable length CDRs
-# vary the sequence between CAX and XF
-# provide template info for CAXX and XXF
-#
-
 
 import argparse
-parser = argparse.ArgumentParser(description="alphafold dock design")
+parser = argparse.ArgumentParser(
+    description="alphafold dock design",
+    epilog='''
+Flexible dock design using the "random loops" approach
+
+input is a TSV file with peptide-MHC target info (allele name, peptide seq)
+
+The script repeats the following steps '--num_designs' times:
+
+STEP 1. pick a random pmhc target from list
+
+STEP 2. pick a template tcr for that pmhc target. By default this will be a tcr that
+binds to the same MHC allele. This template contribute the following information:
+* va, ja, vb, jb (the V and J genes for the alpha and beta chains)
+* the first 3 and last 2 residues of the CDR3 loops
+
+    --allow_mhc_mismatch will expand the set of potential templates to include all
+tcrs that bind the same MHC class
+
+STEP 3. pick CDR3 loops from a random paired TCR. Mutate the first 3 and last 2 aas
+to match the template tcr from STEP 2.
+
+STEP 4. Provide this information (peptide,MHC,V/J genes, CDR3 sequences) to a
+modified alphafold TCR docking protocol
+
+STEP 5. Re-design the CDR3 loops (excluding first 3 and last 2 residues) using MPNN
+
+STEP 6. Re-dock the TCR to the pMHC using the same alphafold docking protocol used
+in step 4.
+
+STEP 7. Compute final stats like pmhc_tcr_pae, peptide_loop_pae, and dock-rmsd between
+first and second alphafold models.
+
+
+
+Example command line:
+
+python dock_design.py --pmhc_targets my_pmhc_targets.tsv \\
+    --num_designs 10  --outfile_prefix dock_design_test1
+
+The --pmhc_targets file should have these columns:
+    * organism ('human' or 'mouse')
+    * mhc_class (1 or 2)
+    * mhc (e.g. "A*02:01")
+    * peptide (e.g. "GILGFVFTL")
+
+$ head my_pmhc_targets.tsv
+organism	mhc_class	mhc	peptide
+human	1	A*01:01	EVDPIGHLY
+
+email pbradley@fredhutch.org with questions
+
+''',
+    formatter_class=argparse.RawDescriptionHelpFormatter,
+)
 
 parser.add_argument('--num_designs', type=int, required=True)
 parser.add_argument('--pmhc_targets', required=True)
@@ -41,22 +88,19 @@ from design_stats import compute_simple_stats
 from wrapper_tools import run_alphafold, run_mpnn
 
 
-## hard-coded
+## hard-coded -- these control how much sequence is retained from tcr template cdr3s
 nterm_seq_stem = 3
 cterm_seq_stem = 2
-#nterm_align_stem = 4
-#cterm_align_stem = 3
-force_native_seq_stems = True # since these aren't being designed...
 ## defaults ##########
 
 
-
+# read the targets
 pmhc_targets = pd.read_table(args.pmhc_targets)
 required_cols = 'organism mhc_class mhc peptide'.split()
 for col in required_cols:
     assert col in pmhc_targets.columns, f'Need {col} in --pmhc_targets'
 
-
+# read the big paired tcr database, this provides the random cdr3a/cdr3b pairs
 tcrs_file = '/home/pbradley/csdat/big_covid/big_combo_tcrs_2022-01-22.tsv'
 print('reading:', tcrs_file)
 big_tcrs_df = pd.read_table(tcrs_file)
@@ -70,8 +114,10 @@ big_tcrs_df = big_tcrs_df[~badmask]
 
 targets_dfl = []
 
+# sample --num_designs pmhcs and cdr3a/b pairs
 pmhcs = pmhc_targets.sample(n=args.num_designs, replace=True,
                             random_state=args.random_state)
+
 cdr3s = big_tcrs_df.sample(n=args.num_designs, replace=True,
                            random_state=args.random_state)
 
@@ -80,19 +126,22 @@ for (_,lpmhc), lcdr3 in zip(pmhcs.iterrows(), cdr3s.itertuples()):
 
     # look for tcrs with the same allele
     templates = td2.sequtil.ternary_info.copy()
-    if not args.allow_mhc_mismatch:
+    templates = templates[templates.organism == lpmhc.organism].copy()
+    if args.allow_mhc_mismatch: # only enforce same mhc_class
+        templates = templates[templates.mhc_class==lpmhc.mhc_class]
+    else: # require same mhc class and same mhc allele
         templates = templates[(templates.mhc_class==lpmhc.mhc_class)&
                               (templates.mhc_allele==lpmhc.mhc)]
-        if templates.shape[0] == 0:
-            print('no matching templates found for mhc:',
-                  lpmhc.mhc)
-            exit(1)
+    if templates.shape[0] == 0:
+        print('ERROR no matching templates found for mhc:',
+              lpmhc.mhc)
+        exit(1)
 
     outl = lpmhc.copy()
     ltcr = templates.sample(n=1).iloc[0]
     cdr3a = lcdr3.cdr3a
     cdr3b = lcdr3.cdr3b
-    # preserve 1st 3 and last 2 rsds from template tcr (va,ja,vb,jb)
+    # preserve 1st 3 and last 2 cdr3 rsds from template tcr (set by n/cterm_seq_stem)
     cdr3a = (ltcr.cdr3a[:nterm_seq_stem] +
              cdr3a[nterm_seq_stem:-cterm_seq_stem] +
              ltcr.cdr3a[-cterm_seq_stem:])
@@ -105,6 +154,7 @@ for (_,lpmhc), lcdr3 in zip(pmhcs.iterrows(), cdr3s.itertuples()):
     outl['vb'] = ltcr.vb
     outl['jb'] = ltcr.jb
     outl['cdr3b'] = cdr3b
+    outl['tcr_template_pdbid'] = ltcr.pdbid
     dfl.append(outl)
 
 tcrs = pd.DataFrame(dfl)
@@ -113,11 +163,11 @@ outdir = f'{args.outfile_prefix}_tmp/'
 if not exists(outdir):
     mkdir(outdir)
 
-td2.sequtil.setup_for_alphafold(
+targets = td2.sequtil.setup_for_alphafold(
     tcrs, outdir, num_runs=1, use_opt_dgeoms=True, clobber=True,
+    force_tcr_pdbids_column='tcr_template_pdbid',
 )
 
-targets = pd.read_table(outdir+'targets.tsv')
 targets.rename(columns={'target_chainseq':'chainseq',
                         'templates_alignfile':'alignfile'}, inplace=True)
 dfl = []
@@ -142,6 +192,11 @@ targets = run_alphafold(
     #dry_run = True,
 )
 
+# compute stats; most will be over-written but this saves docking geometry info
+# so at the end we will get an rmsd between the mpnn-input pose and the final
+# alphafold re-docked pose
+targets = compute_simple_stats(targets, extend_flex='barf')
+
 # run mpnn
 outprefix = f'{outdir}_mpnn'
 targets = run_mpnn(targets, outprefix, extend_flex='barf')
@@ -153,10 +208,10 @@ targets = run_alphafold(
     num_recycle=args.num_recycle,
     model_name = args.model_name,
     model_params_file = args.model_params_file,
-    ignore_identities = True,
+    ignore_identities = True, # since mpnn changed sequence...
 )
 
-# compute stats
+# compute stats again. this should compute docking rmsd to the original mpnn dock
 targets = compute_simple_stats(targets, extend_flex='barf')
 
 # write results

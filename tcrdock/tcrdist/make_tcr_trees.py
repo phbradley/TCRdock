@@ -12,6 +12,7 @@ from . import make_tcr_logo
 #from . import util
 #from . import tcr_sampler ## for analyze_junction
 
+from .convert_svg_to_png import MONOSPACE_FONT_FAMILY, convert_svg_to_png
 
 def make_tcr_tree_svg_commands(
         tcrs,

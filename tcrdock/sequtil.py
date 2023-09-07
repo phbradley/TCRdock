@@ -1098,6 +1098,7 @@ def make_templates_for_alphafold(
         use_same_pmhc_dgeoms=False,
         exclude_pdbids=None,
         force_pmhc_pdbids=None,
+        force_tcr_pdbids=None,
         use_opt_dgeoms=False,
 ):
     ''' Makes num_templates_per_run * num_runs template pdb files
@@ -1258,6 +1259,7 @@ def make_templates_for_alphafold(
                                     identities,
             ))
     else: # class II
+        assert force_pmhc_pdbids is None # not implemented here yet...
         #
         trg_mhca_alseq = get_mhc_class_2_alseq('A', mhc_allele.split(',')[0])
         trg_mhcb_alseq = get_mhc_class_2_alseq('B', mhc_allele.split(',')[1])
@@ -1353,6 +1355,8 @@ def make_templates_for_alphafold(
 
         templates = tcr_info[tcr_info.ab==ab]
         templates = templates[~templates.pdbid.isin(exclude_pdbids)]
+        if force_tcr_pdbids:
+            templates = templates[templates.pdbid.isin(force_tcr_pdbids)]
         template_tcrs = [
             (x.organism[0]+x.v_gene, None, x.cdr3) for x in templates.itertuples()]
         #templates['v_gene j_gene cdr3'.split()].itertuples(index=False))
@@ -1715,6 +1719,8 @@ def setup_for_alphafold(
         exclude_self_peptide_docking_geometries=False,
         alt_self_peptides_column=None, # this column should be comma-separated
         exclude_pdbids_column=None, # this column should be comma-separated
+        force_tcr_pdbids_column=None, # this column should be comma-separated
+        force_pmhc_pdbids_column=None, # this column should be comma-separated
         targetid_prefix_suffix='',
         use_opt_dgeoms=False,
         **kwargs,
@@ -1728,7 +1734,7 @@ def setup_for_alphafold(
     if organism is None:
         required_cols.append('organism')
     for col in required_cols:
-        assert col in tcr_db.columns
+        assert col in tcr_db.columns, f'Need {col} column in tcr_db'
 
     #assert not any(tcr_db.mhc.str.startswith('E*'))
 
@@ -1741,6 +1747,12 @@ def setup_for_alphafold(
             assert all(tcr_db.organism==organism)
         else:
             tcr_db['organism'] = organism
+    if ('targetid' in tcr_db and tcr_db.targetid.value_counts().max()==1 and
+        num_runs==1 and not targetid_prefix_suffix):
+        trust_targetid = True
+    else:
+        trust_targetid = False
+
 
     # doesnt do anything if init has already been called (I don't think)
 
@@ -1788,8 +1800,13 @@ def setup_for_alphafold(
             exit()
 
     targets_dfl = []
+    seen_targetids = set() # for sanity checking only
     for index, targetl in tcr_db.iterrows():
-        targetid_prefix = f'T{index:05d}_{targetl.mhc_peptide}{targetid_prefix_suffix}'
+        if trust_targetid:
+            targetid_prefix = targetl.targetid
+        else:
+            targetid_prefix = (f'T{index:05d}_{targetl.mhc_peptide}'
+                               f'{targetid_prefix_suffix}')
         print('START', index, tcr_db.shape[0], targetid_prefix)
         outfile_prefix = f'{outdir}{targetid_prefix}'
         if exclude_self_peptide_docking_geometries:
@@ -1813,6 +1830,24 @@ def setup_for_alphafold(
         else:
             exclude_pdbids = None
 
+        if force_tcr_pdbids_column is not None:
+            force_tcr_pdbids = targetl[force_tcr_pdbids_column]
+            if pd.isna(force_tcr_pdbids):
+                force_tcr_pdbids = None
+            else:
+                force_tcr_pdbids = force_tcr_pdbids.split(',')
+        else:
+            force_tcr_pdbids = None
+
+        if force_pmhc_pdbids_column is not None:
+            force_pmhc_pdbids = targetl[force_pmhc_pdbids_column]
+            if pd.isna(force_pmhc_pdbids):
+                force_pmhc_pdbids = None
+            else:
+                force_pmhc_pdbids = force_pmhc_pdbids.split(',')
+        else:
+            force_pmhc_pdbids = None
+
         all_run_info = make_templates_for_alphafold(
             targetl.organism, targetl.va, targetl.ja, targetl.cdr3a,
             targetl.vb, targetl.jb, targetl.cdr3b,
@@ -1821,6 +1856,8 @@ def setup_for_alphafold(
             num_runs = num_runs,
             alt_self_peptides=alt_self_peptides,
             exclude_pdbids = exclude_pdbids,
+            force_tcr_pdbids = force_tcr_pdbids,
+            force_pmhc_pdbids = force_pmhc_pdbids,
             use_opt_dgeoms = use_opt_dgeoms,
             **kwargs,
         )
@@ -1828,7 +1865,7 @@ def setup_for_alphafold(
         for run in range(num_runs):
             info = all_run_info[all_run_info.run==run]
             assert info.shape[0] == 4#num templates
-            targetid = f'{targetid_prefix}_{run}'
+            targetid = targetid_prefix if trust_targetid else f'{targetid_prefix}_{run}'
             trg_cbseq = set(info.target_chainseq).pop()
             alignfile = f'{outdir}{targetid}_alignments.tsv'
             info.to_csv(alignfile, sep='\t', index=False)
@@ -1837,6 +1874,8 @@ def setup_for_alphafold(
             outl['target_chainseq'] = trg_cbseq
             outl['templates_alignfile'] = alignfile
             targets_dfl.append(outl)
+            assert targetid not in seen_targetids
+            seen_targetids.add(targetid)
         sys.stdout.flush()
 
         # save partial work... since this is so freakin slow
@@ -1844,8 +1883,10 @@ def setup_for_alphafold(
         pd.DataFrame(targets_dfl).to_csv(outfile, sep='\t', index=False)
 
     outfile = outdir+'targets.tsv'
-    pd.DataFrame(targets_dfl).to_csv(outfile, sep='\t', index=False)
+    targets = pd.DataFrame(targets_dfl)
+    targets.to_csv(outfile, sep='\t', index=False)
     print('made:', outfile)
+    return targets
 
 
 def get_mhc_chain_trim_positions(chainseq, organism, mhc_class, mhc_allele, chain=None):

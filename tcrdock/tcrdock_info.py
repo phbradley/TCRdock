@@ -53,7 +53,7 @@ class TCRdockInfo():
     ):
         self.valid = False
         self.organism = organism
-        self.mhc_class = int(mhc_class)
+        self.mhc_class = mhc_class if mhc_class is None else int(mhc_class)
         self.pep_seq = pep_seq
         #self.mhc_aseq = mhc_aseq
         #self.mhc_bseq = mhc_bseq
@@ -160,7 +160,10 @@ class TCRdockInfo():
         ''' should be inverse of to_dict
         '''
         self.organism = D['organism']
-        self.mhc_class = D['mhc_class']
+        try:
+            self.mhc_class = int(D['mhc_class'])
+        except TypeError:
+            self.mhc_class = D['mhc_class']
         self.mhc_allele = D['mhc_allele']
         self.mhc_core = D['mhc_core']
         self.pep_seq = D['pep_seq']
