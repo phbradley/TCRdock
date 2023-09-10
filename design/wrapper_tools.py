@@ -408,7 +408,7 @@ def run_rf_antibody_on_designs(
     results = pd.DataFrame(dfl)
     return results
 
-def setup_rf_diff_tcr_template(pdbid):
+def setup_rf_diff_tcr_template(pdbid, nterm_seq_stem=3, cterm_seq_stem=2):
     ''' returns:
 
     tcr_template_pdbfile, design_loops
@@ -418,7 +418,8 @@ def setup_rf_diff_tcr_template(pdbid):
     note that H is TCR alpha chain and L is TCR beta chain !!
 
     '''
-    outfile = f'{td2.util.path_to_db}/rf_diff_templates/{pdbid}_tcr.pdb'
+    outfile = (f'{td2.util.path_to_db}/rf_diff_templates/'
+               f'{pdbid}_tcr_n{nterm_seq_stem}_c{cterm_seq_stem}.pdb')
 
     row = td2.sequtil.ternary_info.loc[pdbid]
     print('setup_rf_diff_tcr_template:', pdbid, outfile)
@@ -456,14 +457,18 @@ def setup_rf_diff_tcr_template(pdbid):
             continue
         hl = 'H' if ii<4 else 'L'
         num = ii%4 + 1
+        start, stop = loop
         if num == 4:
             num = 3
-        if out is not None:
-            for pos in range(loop[0], loop[1]+1):
-                out.write(f'REMARK PDBinfo-LABEL: {pos+1:4d} {hl}{num}\n')
-        print('cdr', hl, num, pose['sequence'][loop[0]:loop[1]+1])
+            start += nterm_seq_stem
+            stop -= cterm_seq_stem
 
-        looplen = loop[1]-loop[0]+1
+        if out is not None:
+            for pos in range(start, stop+1):
+                out.write(f'REMARK PDBinfo-LABEL: {pos+1:4d} {hl}{num}\n')
+        print('cdr', hl, num, pose['sequence'][start:stop+1])
+
+        looplen = stop-start+1
         design_loops.append(f'{hl}{num}:{looplen}')
 
     if out is not None:
@@ -478,7 +483,7 @@ def setup_rf_diff_pmhc_template(pdbid, n_hotspot=3):
     pdbfile, hotspot_string
     '''
 
-    outfile = f'{td2.util.path_to_db}/rf_diff_templates/{pdbid}_pmhc.pdb'
+    outfile = f'{td2.util.path_to_db}/rf_diff_templates/{pdbid}_pmhc_hs{n_hotspot}.pdb'
 
     row = td2.sequtil.ternary_info.loc[pdbid]
     cbs = [0]+list(it.accumulate(len(x) for x in row.chainseq.split('/')))

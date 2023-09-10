@@ -29,6 +29,15 @@ parser.add_argument('--outfile_prefix', required=True)
 parser.add_argument('--debug', action = 'store_true')
 parser.add_argument('--num_recycle', type=int, default=3)
 parser.add_argument('--random_state', type=int)
+parser.add_argument('--nterm_seq_stem', type=int, default=3,
+                    help='number of non-designable positions at CDR3 N-terminus')
+parser.add_argument('--cterm_seq_stem', type=int, default=2,
+                    help='number of non-designable positions at CDR3 C-terminus')
+parser.add_argument('--n_hotspot', type=int, default=3)
+# parser.add_argument('--random_cdr3lens', action = 'store_true',
+#                     help='choose cdr3lens from a big db of paired tcrs')
+parser.add_argument('--cdr3_lens', help='specify cdr3a length range and cdr3b length '
+                    'range, looks like "13-15,14-17" ')
 parser.add_argument('--model_name', default='model_2_ptm_ft_binder')
 parser.add_argument(
     '--model_params_file',
@@ -39,13 +48,14 @@ args = parser.parse_args()
 
 
 # other imports
+import re
 import design_paths
 design_paths.setup_import_paths()
 import tcrdock as td2
 import pandas as pd
 import numpy as np
 from os.path import exists
-from os import mkdir, system
+from os import mkdir, system, popen
 import random
 from collections import Counter
 import itertools as it
@@ -72,8 +82,27 @@ EXE='/home/pbradley/gitrepos/rf_diffusion_netdbabsoft/rf_diffusion/run_inference
 CHK = ('/home/pbradley/gitrepos/rf_diffusion_netdbabsoft/rf_diffusion/'
        'model_weights/BFF_70.pt')
 
-tcr_pdbfile, design_loops = wrapper_tools.setup_rf_diff_tcr_template(args.tcr_pdbid)
-pmhc_pdbfile, hotspot_string= wrapper_tools.setup_rf_diff_pmhc_template(args.pmhc_pdbid)
+tcr_pdbfile, design_loops = wrapper_tools.setup_rf_diff_tcr_template(
+    args.tcr_pdbid,
+    nterm_seq_stem=args.nterm_seq_stem,
+    cterm_seq_stem=args.cterm_seq_stem,
+)
+
+pmhc_pdbfile, hotspot_string= wrapper_tools.setup_rf_diff_pmhc_template(
+    args.pmhc_pdbid,
+    n_hotspot=args.n_hotspot,
+)
+
+
+if args.cdr3_lens:
+    pad = args.nterm_seq_stem + args.cterm_seq_stem # fixed cdr3 sequence from tcr tmplt
+    a0,a1,b0,b1 = map(int, re.match('([0-9]+)-([0-9]+),([0-9]+)-([0-9]+)',
+                                    args.cdr3_lens).groups())
+    assert design_loops[2][:3] == 'H3:' and design_loops[5][:3] == 'L3:'
+    assert a0>pad and b0>pad
+    design_loops[2] = f'H3:{a0-pad}-{a1-pad}'
+    design_loops[5] = f'L3:{b0-pad}-{b1-pad}'
+
 
 if ONLY_CDR3:
     design_loops = [design_loops[2], design_loops[5]]
@@ -81,6 +110,14 @@ if ONLY_CDR3:
 design_loopstring = '['+','.join(design_loops)+']'
 
 rfabdiff_outprefix = args.outfile_prefix+'_rfabdiff'
+
+# delete old pdbfiles, since we are parsing the logfile for looplen info (could fix)
+for num in range(args.num_designs):
+    pdbfile = f'{rfabdiff_outprefix}_{num}.pdb'
+    if exists(pdbfile):
+        print('deleting old rf_diff pdbfile:', pdbfile)
+        remove(pdbfile)
+
 
 cmd = (f'{PY} {EXE} --config-name antibody '
        f' inference.ckpt_override_path={CHK} '
@@ -120,6 +157,21 @@ with open(tdifile, 'r') as f:
 cbs_tcr_pdb  = [0] + list(it.accumulate(len(x) for x in  tcr_row.chainseq.split('/')))
 cbs_pmhc_pdb = [0] + list(it.accumulate(len(x) for x in pmhc_row.chainseq.split('/')))
 
+# figure out the actual loop lengths used -- this is fiddly!
+logfile = rfabdiff_outprefix+'.log'
+pattern = f'Timestep {DIFFUSER_T}, input to next step:'
+lines = popen(f'grep -F "{pattern}" {logfile}').readlines()
+assert len(lines) == args.num_designs, \
+    f'rfab_diff failed or logfile parse err: {logfile}'
+numloops = 2 if ONLY_CDR3 else 6
+all_looplens = []
+for line in lines:
+    seq = line.split()[-1]
+    looplens = [len(x) for x in re.findall('-+', seq)]
+    assert len(looplens) == numloops
+    print(looplens, seq)
+    all_looplens.append(looplens)
+
 
 for num in range(args.num_designs):
     pdbfile = f'{rfabdiff_outprefix}_{num}.pdb'
@@ -147,21 +199,44 @@ for num in range(args.num_designs):
 
     assert [nres_mhc, nres_pmhc] == cbs_pmhc_pdb[1:3]
 
-    shift = nres_pmhc - cbs_tcr_pdb[2] # from tcr to pmhc
 
+    # shift things around to handle varying looplens
+    assert ONLY_CDR3 # for the time being...
+    looplens = all_looplens[num]
+    old_cdr3a_len = tdinfo_tcr_pdb.tcr_cdrs[3][1] - tdinfo_tcr_pdb.tcr_cdrs[3][0] +1
+    new_cdr3a_len = looplens[0] + args.nterm_seq_stem + args.cterm_seq_stem
+    new_cdr3b_len = looplens[1] + args.nterm_seq_stem + args.cterm_seq_stem
+
+    ashift = nres_pmhc - cbs_tcr_pdb[2] # from tcr to pmhc
+    bshift = ashift + new_cdr3a_len - old_cdr3a_len
+
+    print(ashift, bshift, old_cdr3a_len, new_cdr3a_len, new_cdr3b_len, looplens)
+
+    CORELEN = 13 ; assert len(tdinfo_tcr_pdb.tcr_core) == 2*CORELEN
+
+    newcore = ([x+ashift for x in tdinfo_tcr_pdb.tcr_core[:CORELEN]]+
+               [x+bshift for x in tdinfo_tcr_pdb.tcr_core[CORELEN:]])
+
+    newcdrs = ([[x+ashift,y+ashift] for x,y in tdinfo_tcr_pdb.tcr_cdrs[:4]]+
+               [[x+bshift,y+bshift] for x,y in tdinfo_tcr_pdb.tcr_cdrs[4:]])
+
+    newcdrs[3][1] = newcdrs[3][0] + new_cdr3a_len-1
+    newcdrs[7][1] = newcdrs[7][0] + new_cdr3b_len-1
 
     tdinfo = deepcopy(tdinfo_pmhc_pdb)
     tdinfo.tcr = tdinfo_tcr_pdb.tcr
-    tdinfo.tcr_core = [x+shift for x in tdinfo_tcr_pdb.tcr_core]
-    tdinfo.tcr_cdrs = [[x+shift,y+shift] for x,y in tdinfo_tcr_pdb.tcr_cdrs]
+    tdinfo.tcr_core = newcore
+    tdinfo.tcr_cdrs = newcdrs
 
     tcr_coreseq = ''.join(pose['sequence'][x] for x in tdinfo.tcr_core)
     mhc_coreseq = ''.join(pose['sequence'][x] for x in tdinfo.mhc_core)
-    #print('mod_tcr_coreseq:', tcr_coreseq)
-    #print('mod_mhc_coreseq:', mhc_coreseq)
+    print(tcr_coreseq)
 
     assert tcr_coreseq[ 1] == tcr_coreseq[14] == 'C'
-    assert tcr_coreseq[12] == tcr_coreseq[25] == 'G' # assumes we are dfdiffing cdr3
+    if args.nterm_seq_stem:
+        assert tcr_coreseq[12] == tcr_coreseq[25] == 'C' # could fail on wonky tcr pdb
+    else:
+        assert tcr_coreseq[12] == tcr_coreseq[25] == 'G' # CDR3 will start with G
 
     dgeom = td2.docking_geometry.get_tcr_pmhc_docking_geometry(pose, tdinfo)
 
@@ -171,12 +246,16 @@ for num in range(args.num_designs):
     atcr, btcr = tdinfo.tcr
 
     designable_positions = (
-        list(range(tdinfo.tcr_cdrs[3][0], tdinfo.tcr_cdrs[3][1]+1))+
-        list(range(tdinfo.tcr_cdrs[7][0], tdinfo.tcr_cdrs[7][1]+1))
+        list(range(tdinfo.tcr_cdrs[3][0]+args.nterm_seq_stem,
+                   tdinfo.tcr_cdrs[3][1]-args.cterm_seq_stem+1))+
+        list(range(tdinfo.tcr_cdrs[7][0]+args.nterm_seq_stem,
+                   tdinfo.tcr_cdrs[7][1]-args.cterm_seq_stem+1))
     )
 
     assert all(pose['sequence'][x] == 'G' for x in designable_positions)
 
+    cdr3a_posl = range(tdinfo.tcr_cdrs[3][0], tdinfo.tcr_cdrs[3][1]+1)
+    cdr3b_posl = range(tdinfo.tcr_cdrs[7][0], tdinfo.tcr_cdrs[7][1]+1)
     outl = dict(
         targetid = f'{args.pmhc_pdbid}_{args.tcr_pdbid}_{num}',
         chainseq = pose['chainseq'],
@@ -190,9 +269,11 @@ for num in range(args.num_designs):
         mhc = pmhc_row.mhc_allele,
         va    = atcr[0],
         ja    = atcr[1],
+        cdr3a_positions = ','.join(str(x) for x in cdr3a_posl),
         #cdr3a = atcr[2],
         vb    = btcr[0],
         jb    = btcr[1],
+        cdr3b_positions = ','.join(str(x) for x in cdr3b_posl),
         #cdr3b = btcr[2],
         peptide = peptide,
     )
@@ -202,7 +283,6 @@ for num in range(args.num_designs):
 
 targets = pd.DataFrame(dfl)
 
-print(targets.iloc[0])
 
 # run mpnn ############################################################################
 outprefix = args.outfile_prefix+'_mpnn'
@@ -212,19 +292,16 @@ targets = wrapper_tools.run_mpnn(targets, outprefix, dry_run=args.debug)
 cdr3s = []
 for l in targets.itertuples():
     seq = l.chainseq.replace('/','')
-    posl = [int(x) for x in l.designable_positions.split(',')]
-    loopseq = ''
-    for i,pos in enumerate(posl):
-        if i and pos != posl[i-1]+1:
-            loopseq += ','
-        loopseq += seq[pos]
-    assert loopseq.count(',') == 1
-    cdr3s.append(loopseq.split(','))
+    cdr3a = ''.join(seq[int(x)] for x in l.cdr3a_positions.split(','))
+    cdr3b = ''.join(seq[int(x)] for x in l.cdr3b_positions.split(','))
+    cdr3s.append((cdr3a, cdr3b))
 
 targets['cdr3a'] = [x[0] for x in cdr3s]
 targets['cdr3b'] = [x[1] for x in cdr3s]
 
-print(targets.iloc[0])
+if args.nterm_seq_stem:
+    assert all(targets.cdr3a.str.startswith('C'))
+    assert all(targets.cdr3b.str.startswith('C'))
 
 ######################################################################################
 # now run alphafold
@@ -264,13 +341,18 @@ for _,row in af2_targets.iterrows():
     posl = []
     for cdr in [row.cdr3a, row.cdr3b]:
         assert seq.count(cdr)==1
-        posl.extend([seq.index(cdr)+x for x in range(len(cdr))])
+        ndesign = len(cdr) - args.nterm_seq_stem - args.cterm_seq_stem
+        posl.extend([seq.index(cdr)+args.nterm_seq_stem+x for x in range(ndesign)])
     outl = row.copy()
     outl['designable_positions'] = ','.join(str(x) for x in posl)
     dfl.append(outl)
 af2_targets = pd.DataFrame(dfl)
 
-# now we can add some stats
+# sanity check
+assert all(np.array(targets.designable_positions.str.count(','))==
+           np.array(af2_targets.designable_positions.str.count(',')))
+
+# now we can add some stats-- this will compute dock rmsd to rfdiff model
 af2_targets = design_stats.compute_simple_stats(af2_targets)
 
 
@@ -284,10 +366,8 @@ rf2_targets = wrapper_tools.run_rf_antibody_on_designs(
     delete_old_results = True,
 )
 
-print(rf2_targets.iloc[0])
-
-
-## create a final tsv file
+######################################################################################
+## create a final tsv file with info from the af2 and rf modeling:
 copycols = ('model_pdbfile dgeom_rmsd chainseq cdr3a cdr3b pmhc_tcr_pae'
             ' peptide_loop_pae peptide_plddt rfab_pmhc_tcr_pae rfab_pbind').split()
 copycols += dgcols
@@ -299,6 +379,19 @@ for tag, results in [['af2',af2_targets],['rf2',rf2_targets]]:
             print(f'{tag} results missing col: {col}')
         else:
             targets[tag+'_'+col] = results[col]
+
+# compute dock rmsds between af and rf models
+af2_dgeoms = [td2.docking_geometry.DockingGeometry().from_dict(x)
+              for _,x in af2_targets.iterrows()]
+rf2_dgeoms = [td2.docking_geometry.DockingGeometry().from_dict(x)
+              for _,x in rf2_targets.iterrows()]
+D = td2.docking_geometry.compute_docking_geometries_distance_matrix(
+    af2_dgeoms, rf2_dgeoms)
+
+targets['af2_rf2_dgeom_rmsd'] = D[np.arange(args.num_designs),
+                                  np.arange(args.num_designs)]
+
 outfile = args.outfile_prefix+'_final.tsv'
 targets.to_csv(outfile, sep='\t', index=False)
 print('made:', outfile)
+print('DONE')

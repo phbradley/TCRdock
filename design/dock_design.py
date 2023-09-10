@@ -12,7 +12,7 @@ The script repeats the following steps '--num_designs' times:
 STEP 1. pick a random pmhc target from list
 
 STEP 2. pick a template tcr for that pmhc target. By default this will be a tcr that
-binds to the same MHC allele. This template contribute the following information:
+binds to the same MHC allele. This template contributes the following information:
 * va, ja, vb, jb (the V and J genes for the alpha and beta chains)
 * the first 3 and last 2 residues of the CDR3 loops
 
@@ -62,7 +62,7 @@ parser.add_argument('--outfile_prefix', required=True)
 parser.add_argument('--allow_mhc_mismatch', action='store_true')
 parser.add_argument('--num_recycle', type=int, default=3)
 parser.add_argument('--random_state', type=int)
-parser.add_argument('--model_name', default='model_2_ptm_ft')
+parser.add_argument('--model_name', default='model_2_ptm_ft_binder')
 parser.add_argument(
     '--model_params_file',
     default=('/home/pbradley/csdat/tcrpepmhc/amir/ft_params/'
