@@ -326,6 +326,12 @@ def get_model_tdinfo(
 
     return tdinfo
 
+def get_row_tdinfo(row, verbose=False):
+    return get_model_tdinfo(
+        row.organism, row.mhc_class, row.mhc, row.chainseq, row.va, row.ja, row.cdr3a,
+        row.vb, row.jb, row.cdr3b, verbose=verbose,
+    )
+
 
 def compute_docking_geometry_info(l, pose=None):
     ''' l is a Series
@@ -414,6 +420,7 @@ def compute_simple_stats(
         assert l.mhc_class + 3 == num_chains
         nres_mhc, nres_pmhc = cbs[-3:-1]
         flex_posl = get_designable_positions(row=l, extend_flex=extend_flex)
+        flex_posl.sort() # probably not necessary
 
         plddts = np.load(l.model_plddtfile)[:nres]
         paes = np.load(l.model_paefile)[:nres,:][:,:nres]
@@ -425,6 +432,8 @@ def compute_simple_stats(
         for i,j in zip(flex_posl[:-1], flex_posl[1:]):
             if chain_number[i] != chain_number[j]:
                 loop_seq2 += '/'
+            elif j!=i+1:
+                loop_seq2 += '-'
             loop_seq2 += sequence[j]
 
         outl = l.copy()
@@ -439,6 +448,12 @@ def compute_simple_stats(
         outl['pmhc_tcr_pae'] = 0.5*(
             paes[:nres_pmhc,:][:,nres_pmhc:].mean() +
             paes[nres_pmhc:,:][:,:nres_pmhc].mean())
+        if hasattr(l, 'loop_seq'):
+            outl['old_loop_seq'] = l.loop_seq
+        if hasattr(l, 'loop_seq2'):
+            outl['old_loop_seq2'] = l.loop_seq2
+        if hasattr(l, 'pmhc_tcr_pae'):
+            outl['old_pmhc_tcr_pae'] = l.pmhc_tcr_pae
 
         # maybe compute docking geometry
         dginfo = compute_docking_geometry_info(l)

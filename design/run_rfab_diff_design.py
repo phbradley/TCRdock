@@ -16,7 +16,6 @@
 # - rf2-af2 rmsd
 #
 
-ONLY_CDR3 = True
 DIFFUSER_T = 50
 
 import argparse
@@ -27,6 +26,7 @@ parser.add_argument('--tcr_pdbid', required=True)
 parser.add_argument('--num_designs', type=int, required=True)
 parser.add_argument('--outfile_prefix', required=True)
 parser.add_argument('--debug', action = 'store_true')
+parser.add_argument('--design_other_cdrs', action = 'store_true')
 parser.add_argument('--num_recycle', type=int, default=3)
 parser.add_argument('--random_state', type=int)
 parser.add_argument('--nterm_seq_stem', type=int, default=3,
@@ -60,6 +60,7 @@ import random
 from collections import Counter
 import itertools as it
 from copy import deepcopy
+from timeit import default_timer as timer
 
 import wrapper_tools
 import design_stats
@@ -72,6 +73,33 @@ assert args.tcr_pdbid in td2.sequtil.ternary_info.index
 # also temporary, makes rfabdiff output parsing easier below
 assert td2.sequtil.ternary_info.loc[args.pmhc_pdbid].mhc_class == 1
 
+def get_my_designable_positions(tdinfo):
+    ''' add _my in fxn name since get_designable_positions defined in design_stats.py
+
+    this uses cmdline args:
+
+    --design_other_cdrs
+    --nterm_seq_stem
+    --cterm_seq_stem
+
+    and the CDR sequence positions defined in tdinfo
+
+    '''
+    global args # use cmdline flag info here
+
+    designable_positions = []
+    for ii, loop in enumerate(tdinfo.tcr_cdrs):
+        if ii%4==2: # not designing cdr2.5
+            continue
+        elif ii%4==3: # cdr3
+            npad, cpad = args.nterm_seq_stem, args.cterm_seq_stem
+        else: # cdr1 or cdr2
+            if not args.design_other_cdrs:
+                continue
+            npad, cpad = 0, 0
+
+        designable_positions.extend(range(loop[0]+npad, loop[1]+1-cpad))
+    return designable_positions
 
 
 ######################################################################################
@@ -104,7 +132,7 @@ if args.cdr3_lens:
     design_loops[5] = f'L3:{b0-pad}-{b1-pad}'
 
 
-if ONLY_CDR3:
+if not args.design_other_cdrs:
     design_loops = [design_loops[2], design_loops[5]]
 
 design_loopstring = '['+','.join(design_loops)+']'
@@ -114,7 +142,7 @@ rfabdiff_outprefix = args.outfile_prefix+'_rfabdiff'
 # delete old pdbfiles, since we are parsing the logfile for looplen info (could fix)
 for num in range(args.num_designs):
     pdbfile = f'{rfabdiff_outprefix}_{num}.pdb'
-    if exists(pdbfile):
+    if exists(pdbfile) and not args.debug:
         print('deleting old rf_diff pdbfile:', pdbfile)
         remove(pdbfile)
 
@@ -131,9 +159,10 @@ cmd = (f'{PY} {EXE} --config-name antibody '
        f' > {rfabdiff_outprefix}.log 2> {rfabdiff_outprefix}.err')
 
 print(cmd)
+start = timer()
 if not args.debug:
     system(cmd)
-
+rfdiff_time = timer()-start
 
 ######################################################################################
 # now process the output and get setup to run mpnn
@@ -163,7 +192,7 @@ pattern = f'Timestep {DIFFUSER_T}, input to next step:'
 lines = popen(f'grep -F "{pattern}" {logfile}').readlines()
 assert len(lines) == args.num_designs, \
     f'rfab_diff failed or logfile parse err: {logfile}'
-numloops = 2 if ONLY_CDR3 else 6
+numloops = 6 if args.design_other_cdrs else 2
 all_looplens = []
 for line in lines:
     seq = line.split()[-1]
@@ -201,11 +230,11 @@ for num in range(args.num_designs):
 
 
     # shift things around to handle varying looplens
-    assert ONLY_CDR3 # for the time being...
     looplens = all_looplens[num]
+    ia, ib = (2, 5) if args.design_other_cdrs else (0, 1) # indices for cdr3s in looplens
     old_cdr3a_len = tdinfo_tcr_pdb.tcr_cdrs[3][1] - tdinfo_tcr_pdb.tcr_cdrs[3][0] +1
-    new_cdr3a_len = looplens[0] + args.nterm_seq_stem + args.cterm_seq_stem
-    new_cdr3b_len = looplens[1] + args.nterm_seq_stem + args.cterm_seq_stem
+    new_cdr3a_len = looplens[ia] + args.nterm_seq_stem + args.cterm_seq_stem
+    new_cdr3b_len = looplens[ib] + args.nterm_seq_stem + args.cterm_seq_stem
 
     ashift = nres_pmhc - cbs_tcr_pdb[2] # from tcr to pmhc
     bshift = ashift + new_cdr3a_len - old_cdr3a_len
@@ -245,13 +274,8 @@ for num in range(args.num_designs):
 
     atcr, btcr = tdinfo.tcr
 
-    designable_positions = (
-        list(range(tdinfo.tcr_cdrs[3][0]+args.nterm_seq_stem,
-                   tdinfo.tcr_cdrs[3][1]-args.cterm_seq_stem+1))+
-        list(range(tdinfo.tcr_cdrs[7][0]+args.nterm_seq_stem,
-                   tdinfo.tcr_cdrs[7][1]-args.cterm_seq_stem+1))
-    )
-
+    designable_positions = get_my_designable_positions(tdinfo)
+    assert len(designable_positions) == sum(looplens)
     assert all(pose['sequence'][x] == 'G' for x in designable_positions)
 
     cdr3a_posl = range(tdinfo.tcr_cdrs[3][0], tdinfo.tcr_cdrs[3][1]+1)
@@ -263,7 +287,6 @@ for num in range(args.num_designs):
         designable_positions = ','.join(str(x) for x in designable_positions),
         pmhc_pdbid = args.pmhc_pdbid,
         tcr_pdbid = args.tcr_pdbid,
-        only_cdr3 = ONLY_CDR3,
         organism = pmhc_row.organism,
         mhc_class = pmhc_row.mhc_class,
         mhc = pmhc_row.mhc_allele,
@@ -286,7 +309,9 @@ targets = pd.DataFrame(dfl)
 
 # run mpnn ############################################################################
 outprefix = args.outfile_prefix+'_mpnn'
+start = timer()
 targets = wrapper_tools.run_mpnn(targets, outprefix, dry_run=args.debug)
+mpnn_time = timer()-start
 
 # update cdr3a, cdr3b sequence
 cdr3s = []
@@ -294,10 +319,12 @@ for l in targets.itertuples():
     seq = l.chainseq.replace('/','')
     cdr3a = ''.join(seq[int(x)] for x in l.cdr3a_positions.split(','))
     cdr3b = ''.join(seq[int(x)] for x in l.cdr3b_positions.split(','))
-    cdr3s.append((cdr3a, cdr3b))
+    loopseq = ''.join(seq[int(x)] for x in l.designable_positions.split(','))
+    cdr3s.append((cdr3a, cdr3b, loopseq))
 
 targets['cdr3a'] = [x[0] for x in cdr3s]
 targets['cdr3b'] = [x[1] for x in cdr3s]
+targets['loopseq'] = [x[2] for x in cdr3s]
 
 if args.nterm_seq_stem:
     assert all(targets.cdr3a.str.startswith('C'))
@@ -320,55 +347,74 @@ af2_targets = td2.sequtil.setup_for_alphafold(
 af2_targets.rename(columns={'target_chainseq':'chainseq',
                             'templates_alignfile':'alignfile'}, inplace=True)
 
+af2_targets['designable_positions'] = [
+    ','.join(map(str, get_my_designable_positions(design_stats.get_row_tdinfo(x))))
+    for x in af2_targets.itertuples()
+]
+
+# tricky-- we need to add in any design mutations in cdr1/cdr2 loops
+# do this by updating the 'chainseq' column in af2_targets
+#
+if args.design_other_cdrs:
+    for num, loopseq in enumerate(targets.loopseq):
+        row = af2_targets.iloc[num]
+        seq = list(row.chainseq.replace('/',''))
+        for ii, pos in enumerate(map(int, row.designable_positions.split(','))):
+            seq[pos] = loopseq[ii]
+        seq = ''.join(seq) # it was a list
+        cbs = [0]+list(it.accumulate(len(x) for x in row.chainseq.split('/')))
+        new_cs = '/'.join(seq[a:b] for a,b in zip(cbs[:-1], cbs[1:]))
+        af2_targets.loc[row.name, 'chainseq'] = new_cs
+
+#af2_targets.to_csv('tmp.tsv', sep='\t', index=False)
+#exit()
+
 # run alphafold
 outprefix = f'{outdir}afold'
+start = timer()
 af2_targets = wrapper_tools.run_alphafold(
     af2_targets, outprefix,
     num_recycle = args.num_recycle,
     model_name = args.model_name,
     model_params_file = args.model_params_file,
+    ignore_identities = args.design_other_cdrs,
     dry_run = args.debug,
 )
+af2_time = timer()-start
 
-# compute stats for alphafold comparison: tricky b/c sequences wont match exactly
+# compute stats for alphafold comparison: tricky b/c sequences/lens wont match exactly
 dgcols = ('d torsion mhc_unit_y mhc_unit_z mhc_unit_x_is_negative'
           ' tcr_unit_y tcr_unit_z tcr_unit_x_is_negative').split()
 for col in dgcols:
     af2_targets[col] = list(targets[col])
-dfl = []
-for _,row in af2_targets.iterrows():
-    seq = row.chainseq.replace('/','')
-    posl = []
-    for cdr in [row.cdr3a, row.cdr3b]:
-        assert seq.count(cdr)==1
-        ndesign = len(cdr) - args.nterm_seq_stem - args.cterm_seq_stem
-        posl.extend([seq.index(cdr)+args.nterm_seq_stem+x for x in range(ndesign)])
-    outl = row.copy()
-    outl['designable_positions'] = ','.join(str(x) for x in posl)
-    dfl.append(outl)
-af2_targets = pd.DataFrame(dfl)
+
 
 # sanity check
-assert all(np.array(targets.designable_positions.str.count(','))==
+assert all(np.array(targets.designable_positions.str.count(',')) ==
            np.array(af2_targets.designable_positions.str.count(',')))
 
 # now we can add some stats-- this will compute dock rmsd to rfdiff model
+# also fills in loop_seq, loop_seq2, peptide_loop_pae, etc
+#
 af2_targets = design_stats.compute_simple_stats(af2_targets)
 
 
 ######################################################################################
 ## now run rf_ab
 
+start = timer()
 rf2_targets = wrapper_tools.run_rf_antibody_on_designs(
     targets, args.outfile_prefix+'run_rfab',
-    allow_pdb_chainseq_mismatch_for_tcr=True,
+    allow_pdb_chainseq_mismatch_for_tcr=True,# chainseq (ie mpnn seq) != rf-diff pdb seq
     dry_run = args.debug,
-    delete_old_results = True,
+    delete_old_results = not args.debug,
 )
+rf2_time = timer()-start
 
 ######################################################################################
 ## create a final tsv file with info from the af2 and rf modeling:
-copycols = ('model_pdbfile dgeom_rmsd chainseq cdr3a cdr3b pmhc_tcr_pae'
+copycols = ('model_pdbfile dgeom_rmsd chainseq cdr3a cdr3b '
+            ' pmhc_tcr_pae loop_seq loop_seq2 '
             ' peptide_loop_pae peptide_plddt rfab_pmhc_tcr_pae rfab_pbind').split()
 copycols += dgcols
 
@@ -390,6 +436,11 @@ D = td2.docking_geometry.compute_docking_geometries_distance_matrix(
 
 targets['af2_rf2_dgeom_rmsd'] = D[np.arange(args.num_designs),
                                   np.arange(args.num_designs)]
+
+targets['rfdiff_time'] = rfdiff_time / args.num_designs
+targets[  'mpnn_time'] =   mpnn_time / args.num_designs
+targets[   'af2_time'] =    af2_time / args.num_designs
+targets[   'rf2_time'] =    rf2_time / args.num_designs
 
 outfile = args.outfile_prefix+'_final.tsv'
 targets.to_csv(outfile, sep='\t', index=False)

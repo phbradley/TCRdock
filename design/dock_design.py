@@ -60,6 +60,7 @@ parser.add_argument('--num_designs', type=int, required=True)
 parser.add_argument('--pmhc_targets', required=True)
 parser.add_argument('--outfile_prefix', required=True)
 parser.add_argument('--allow_mhc_mismatch', action='store_true')
+parser.add_argument('--design_other_cdrs', action='store_true')
 parser.add_argument('--num_recycle', type=int, default=3)
 parser.add_argument('--random_state', type=int)
 parser.add_argument('--model_name', default='model_2_ptm_ft_binder')
@@ -83,8 +84,9 @@ from os.path import exists
 from os import mkdir
 import random
 from collections import Counter
+from timeit import default_timer as timer
 
-from design_stats import compute_simple_stats
+import design_stats
 from wrapper_tools import run_alphafold, run_mpnn
 
 
@@ -172,18 +174,28 @@ targets.rename(columns={'target_chainseq':'chainseq',
                         'templates_alignfile':'alignfile'}, inplace=True)
 dfl = []
 for l in targets.itertuples():
-    seq = l.chainseq.replace('/','')
     posl = []
-    for s in [l.cdr3a, l.cdr3b]:
-        assert seq.count(s) == 1
-        start = seq.index(s)
-        posl.extend(range(start+nterm_seq_stem, start+len(s)-cterm_seq_stem))
+    if args.design_other_cdrs: # designing the other cdr loops here
+        tdinfo = design_stats.get_row_tdinfo(l)
+        for ii, loop in enumerate(tdinfo.tcr_cdrs):
+            if ii in [2,6]: # skip cdr2.5
+                continue
+            npad, cpad = (nterm_seq_stem, cterm_seq_stem) if ii in [3,7] else \
+                         (0,0)
+            posl.extend(range(loop[0]+npad, loop[1]+1-cpad))
+    else:
+        seq = l.chainseq.replace('/','')
+        for s in [l.cdr3a, l.cdr3b]:
+            assert seq.count(s) == 1
+            start = seq.index(s)
+            posl.extend(range(start+nterm_seq_stem, start+len(s)-cterm_seq_stem))
     dfl.append(','.join([str(x) for x in posl]))
 targets['designable_positions'] = dfl
 
 
 # run alphafold
 outprefix = f'{outdir}_afold1'
+start = timer()
 targets = run_alphafold(
     targets, outprefix,
     num_recycle = args.num_recycle,
@@ -191,18 +203,22 @@ targets = run_alphafold(
     model_params_file = args.model_params_file,
     #dry_run = True,
 )
+af2_time = timer()-start
 
 # compute stats; most will be over-written but this saves docking geometry info
 # so at the end we will get an rmsd between the mpnn-input pose and the final
 # alphafold re-docked pose
-targets = compute_simple_stats(targets, extend_flex='barf')
+targets = design_stats.compute_simple_stats(targets, extend_flex='barf')
 
 # run mpnn
 outprefix = f'{outdir}_mpnn'
+start = timer()
 targets = run_mpnn(targets, outprefix, extend_flex='barf')
+mpnn_time = timer()-start
 
 # run alphafold again
 outprefix = f'{outdir}_afold2'
+start = timer()
 targets = run_alphafold(
     targets, outprefix,
     num_recycle=args.num_recycle,
@@ -210,11 +226,15 @@ targets = run_alphafold(
     model_params_file = args.model_params_file,
     ignore_identities = True, # since mpnn changed sequence...
 )
+af2_time += timer()-start
 
 # compute stats again. this should compute docking rmsd to the original mpnn dock
-targets = compute_simple_stats(targets, extend_flex='barf')
+targets = design_stats.compute_simple_stats(targets, extend_flex='barf')
 
 # write results
+targets['af2_time'] = af2_time/args.num_designs
+targets['mpnn_time'] = mpnn_time/args.num_designs
+
 targets.to_csv(f'{args.outfile_prefix}_final_results.tsv', sep='\t', index=False)
 
 print('DONE')
