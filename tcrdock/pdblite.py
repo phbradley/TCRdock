@@ -407,13 +407,20 @@ def delete_residue_range(pose, start, stop):
     return update_derived_data(newpose)
 
 
-def find_chainbreaks(pose, maxdis = 1.75, verbose=False):
+def find_chainbreaks(
+        pose,
+        maxdis = 1.75,
+        verbose=False,
+        return_total_chainbreak_by_chain=False,
+):
     ''' assumes atom names have the usual PDB extra whitespace in them
     '''
     N, C  = ' N  ', ' C  '
 
     resids, coords = pose['resids'], pose['coords']
     chainbreaks = []
+    total_chainbreak_by_chain = [0.]*len(pose['chains'])
+
     for i, r1 in enumerate(resids[:-1]):
         r2 = resids[i+1]
         if r1[0] == r2[0]:
@@ -421,6 +428,8 @@ def find_chainbreaks(pose, maxdis = 1.75, verbose=False):
                 dis = np.sqrt(np.sum(np.square(coords[r1][C]-coords[r2][N])))
                 if dis >= maxdis:
                     chainbreaks.append(i)
+                    ichain = pose['chains'].index(r1[0])
+                    total_chainbreak_by_chain[ichain] += dis-maxdis
                     if verbose:
                         print('found intra-chain chainbreak:', r1, r2,
                               dis,'>',maxdis)
@@ -430,4 +439,7 @@ def find_chainbreaks(pose, maxdis = 1.75, verbose=False):
                 if N not in coords[r2]:
                     print('missing N atom', r2)
 
-    return chainbreaks
+    if return_total_chainbreak_by_chain:
+        return chainbreaks, total_chainbreak_by_chain
+    else:
+        return chainbreaks

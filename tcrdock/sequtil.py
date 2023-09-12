@@ -142,6 +142,13 @@ tcr_info = all_template_info[TCR]
 pmhc_info = all_template_info[PMHC]
 ternary_info = all_template_info[TERNARY]
 
+# some new pdbs we recently parsed
+new_ternary_tsvfile = path_to_db / 'new_ternary_templates_2023-06-02.tsv'
+new_ternary_info = pd.read_table(new_ternary_tsvfile).set_index('pdbid', drop=False)
+
+new_tcr_tsvfile = path_to_db / 'new_tcr_templates_2023-06-02.tsv'
+new_tcr_info = pd.read_table(new_tcr_tsvfile).set_index(['pdbid','ab'], drop=False)
+
 all_template_poses = {TCR:{}, PMHC:{}, TERNARY:{}}
 
 BAD_DGEOM_PDBIDS = '5sws 7jwi 4jry 4nhu 3tjh 4y19 4y1a 1ymm 2wbj 6uz1'.split()
@@ -342,7 +349,8 @@ def align_tcr_info_pdb_chain_to_structure_msa(pdbid, ab, msa_type_in):
             'human':{'A':{}, 'B':{}}
         }
         print('setting up cache for align_tcr_info_pdb_chain_to_structure_msa function')
-        for l in tcr_info.itertuples():
+        my_tcr_info = pd.concat([tcr_info, new_tcr_info])
+        for l in my_tcr_info.itertuples():
             geneseq = get_v_seq_up_to_cys(l.organism, l.v_gene)
             for msa_type in ['both', 'human']:
                 if msa_type == 'human':
@@ -459,7 +467,11 @@ def align_vgene_to_template_pdb_chain(
     # align cdr3 with gaps in the middle
     # align jgenes
 
-    tmp_row = tcr_info.loc[(tmp_pdbid,ab)]
+    if (tmp_pdbid,ab) in tcr_info.index:
+        tmp_row = tcr_info.loc[(tmp_pdbid,ab)]
+    else:
+        tmp_row = new_tcr_info.loc[(tmp_pdbid,ab)]
+
     tmp_organism = tmp_row.organism
     tmp_chainseq = tmp_row.chainseq
     tmp_cdr3 = tmp_row.cdr3
@@ -647,6 +659,86 @@ def get_mhc_class_2_alseq(chain, allele):
         return None
 
 
+def get_mhc_class_2_mhc_alignseq_from_chainseq(
+        mhc_allele,
+        mhca_pdbseq,
+        mhcb_pdbseq,
+        info='',
+):
+    GAP = ALL_GENES_GAP_CHAR # shorter to type
+    mhcs = mhc_allele.split(',')
+    assert len(mhcs) == 2
+    # mhcs = ['H2'+x if (len(x)==3 and '*' not in x) else x
+    #         for x in mhcs]
+    # if mhcs[0] == 'DPA1*01:04':# hack-- DPA1*01:04 has XXXXX in sequence
+    #     mhcs[0] = 'DPA1*01:12' # blast says this is good, one L-S mismatch
+    pdbseqs = [mhca_pdbseq, mhcb_pdbseq]
+
+    aligns = []
+    for ab, mhc, pdbseq in zip('AB', mhcs, pdbseqs):
+        alseq = get_mhc_class_2_alseq(ab, mhc)
+        #print(ab, mhc, alseq)
+        if alseq is None:
+            print('ERROR get_mhc_class_2_alseq alseq is None:', ab, mhc, info)
+            return None ## NOTE EARLY RETURN
+
+        allele_seq = alseq.replace(GAP,'')
+        al1 = blosum_align(pdbseq, allele_seq)
+        al2 = {i-alseq[:i].count(GAP):i
+               for i,a in enumerate(alseq) if a != GAP}
+        align = [GAP]*len(alseq)
+        for i,a in enumerate(pdbseq):
+            if i in al1:
+                alpos = al2[al1[i]]
+                align[alpos] = a
+                if allele_seq[al1[i]] != a:
+                    print('mismatch:', mhc, i, 'pdb:', a, 'allele:',
+                          allele_seq[al1[i]], info)
+        aligns.append(''.join(align))
+        assert aligns[-1].replace(GAP,'') in pdbseq
+
+    return '/'.join(aligns)
+    # outl = l.copy()
+    # outl['mhc_allele'] = ','.join(mhcs)
+    # outl['mhc_alignseq'] = '/'.join(aligns)
+
+
+def get_mhc_class_1_mhc_alignseq_from_chainseq(
+        mhc_allele,
+        mhc_pdbseq,
+        info='',
+):
+    GAP = ALL_GENES_GAP_CHAR # shorter to type
+
+    mhc_alseq = get_mhc_class_1_alseq(mhc_allele)
+    if mhc_alseq is None:
+        print('ERROR get_mhc_class_1_mhc_alignseq_from_chainseq:',
+              'mhc_alseq None:', mhc_allele)
+        return None
+    mhc_seq = mhc_alseq.replace(GAP, '')
+
+    seq = mhc_pdbseq
+
+    al1 = blosum_align(seq, mhc_seq)
+
+    al2 = {i-mhc_alseq[:i].count(GAP) : i
+           for i,a in enumerate(mhc_alseq) if a != GAP}
+
+    align = [GAP]*len(mhc_alseq)
+    for i,a in enumerate(seq):
+        if i in al1:
+            alpos = al2[al1[i]]
+            align[alpos] = a
+            if mhc_alseq[alpos] != a:
+                print(f'mismatch: {alpos:3d} {mhc_alseq[alpos]}-->{a}',
+                      mhc_allele, info)
+    part = ''.join(align).replace(GAP,'')
+    assert part in seq
+    return ''.join(align)
+
+
+
+
 def get_template_pose_and_tdinfo(pdbid, complex_type):
     ''' returns pose, tdinfo
     complex_type should be in {TCR, TERNARY, PMHC}
@@ -656,8 +748,20 @@ def get_template_pose_and_tdinfo(pdbid, complex_type):
         pdbfile = set(info[info.pdbid==pdbid].pdbfile)
         if not pdbfile:
             # right now we only have class 1 in the special pmhc info...
-            assert complex_type == PMHC
-            info = all_template_info[TERNARY] # NOTE NOTE NOTE
+            if complex_type == PMHC and pdbid in ternary_info.index:
+                info = all_template_info[TERNARY] # NOTE NOTE NOTE
+            elif complex_type in [PMHC, TERNARY] and pdbid in new_ternary_info.index:
+                print('WARNING: using pdb from new_ternary_info:', pdbid)
+                info = new_ternary_info
+            elif pdbid in new_tcr_info.pdbid:
+                print('WARNING: using pdb from new_tcr_info:', pdbid)
+                assert complex_type == TCR
+                info = new_tcr_info
+            else:
+                print('ERROR unrecognized pdbid not found in any info', pdbid,
+                      complex_type)
+                assert False
+                exit(1)
             pdbfile = set(info[info.pdbid==pdbid].pdbfile)
         assert len(pdbfile) == 1
         pdbfile = str(path_to_db) + '/' + pdbfile.pop()
@@ -1100,6 +1204,7 @@ def make_templates_for_alphafold(
         force_pmhc_pdbids=None,
         force_tcr_pdbids=None,
         use_opt_dgeoms=False,
+        use_new_templates=False, # from the 2023-06-02 update
 ):
     ''' Makes num_templates_per_run * num_runs template pdb files
 
@@ -1143,6 +1248,15 @@ def make_templates_for_alphafold(
 
     tcrdister = get_tcrdister('human_and_mouse')
 
+    if use_new_templates:
+        my_ternary_info = pd.concat([ternary_info, new_ternary_info])
+        my_tcr_info = pd.concat([tcr_info, new_tcr_info])
+        my_pmhc_info = pd.concat([pmhc_info, new_ternary_info])
+    else:
+        my_ternary_info = ternary_info
+        my_tcr_info = tcr_info
+        my_pmhc_info = pmhc_info
+
 
     def show_alignment(al,seq1,seq2):
         if verbose:
@@ -1170,7 +1284,8 @@ def make_templates_for_alphafold(
         sortl = []
 
         # use new pmhc-only data
-        for l in pmhc_info.itertuples():
+        # plus maybe some new ternary data
+        for l in my_pmhc_info.itertuples():
             if (l.organism!=organism or l.mhc_class!=mhc_class or
                 l.pdbid in BAD_PMHC_PDBIDS or l.pdbid in exclude_pdbids or
                 (force_pmhc_pdbids and l.pdbid not in force_pmhc_pdbids)):
@@ -1204,16 +1319,16 @@ def make_templates_for_alphafold(
         sortl.sort(reverse=True)
         max_idents = sortl[0][0]
         print(f'mhc max_idents: {max_idents:.3f}', mhc_allele, peptide,
-              pmhc_info.loc[sortl[0][1], 'mhc_allele'],
-              pmhc_info.loc[sortl[0][1], 'pep_seq'])
+              my_pmhc_info.loc[sortl[0][1], 'mhc_allele'],
+              my_pmhc_info.loc[sortl[0][1], 'pep_seq'])
 
         pmhc_alignments = []
         for (idents, pdbid) in sortl[:num_templates_per_run]:
             if idents < next_best_identity_threshold_tcr*max_idents:
                 break
-            templatel = pmhc_info.loc[pdbid]
+            templatel = my_pmhc_info.loc[pdbid]
             tmp_mhc_alseq = templatel.mhc_alignseq
-            tmp_seql = templatel.chainseq.split('/')
+            tmp_seql = templatel.chainseq.split('/')[:2] # slice to allow ternary pdbs
             assert len(tmp_seql)==2 and tmp_seql[1] == templatel.pep_seq
             tmp_mhc_seq = tmp_seql[0] # class 1
             tmp_mhc_alseq_seq = tmp_mhc_alseq.replace(ALL_GENES_GAP_CHAR,'')
@@ -1268,7 +1383,7 @@ def make_templates_for_alphafold(
         trg_pmhc_seq = trg_mhca_seq + trg_mhcb_seq + peptide
 
         sortl = []
-        for l in ternary_info.itertuples():
+        for l in my_ternary_info.itertuples():
             if (l.organism!=organism or l.mhc_class!=mhc_class or
                 l.pdbid in BAD_PMHC_PDBIDS or l.pdbid in exclude_pdbids):
                 continue
@@ -1291,14 +1406,14 @@ def make_templates_for_alphafold(
         sortl.sort(reverse=True)
         max_idents = sortl[0][0]
         print(f'mhc max_idents: {max_idents:.3f}', mhc_allele, peptide,
-              ternary_info.loc[sortl[0][1], 'mhc_allele'],
-              ternary_info.loc[sortl[0][1], 'pep_seq'])
+              my_ternary_info.loc[sortl[0][1], 'mhc_allele'],
+              my_ternary_info.loc[sortl[0][1], 'pep_seq'])
 
         pmhc_alignments = []
         for (idents, pdbid) in sortl[:num_templates_per_run]:
             if idents < next_best_identity_threshold_tcr*max_idents:
                 break
-            templatel = ternary_info.loc[pdbid]
+            templatel = my_ternary_info.loc[pdbid]
             tmp_mhca_alseq, tmp_mhcb_alseq = templatel.mhc_alignseq.split('/')
             mhca_part = tmp_mhca_alseq.replace(ALL_GENES_GAP_CHAR,'')
             mhcb_part = tmp_mhcb_alseq.replace(ALL_GENES_GAP_CHAR,'')
@@ -1353,7 +1468,7 @@ def make_templates_for_alphafold(
 
         trg_msa_alignments = align_vgene_to_structure_msas(organism, trg_v)
 
-        templates = tcr_info[tcr_info.ab==ab]
+        templates = my_tcr_info[my_tcr_info.ab==ab]
         templates = templates[~templates.pdbid.isin(exclude_pdbids)]
         if force_tcr_pdbids:
             templates = templates[templates.pdbid.isin(force_tcr_pdbids)]
@@ -1424,7 +1539,7 @@ def make_templates_for_alphafold(
         )
     elif use_same_pmhc_dgeoms:
         # require matching organism, mhc, peptide with dgeoms
-        dgeom_info = ternary_info[ternary_info.mhc_class == mhc_class]
+        dgeom_info = my_ternary_info[my_ternary_info.mhc_class == mhc_class]
         dgeom_info = dgeom_info[~dgeom_info.pdbid.isin(BAD_DGEOM_PDBIDS)]
         dgeom_info = dgeom_info[~dgeom_info.pdbid.isin(exclude_pdbids)]
         print('same mhc_class', dgeom_info.shape)
@@ -1452,7 +1567,7 @@ def make_templates_for_alphafold(
         rep_dgeom_indices = None
     else:
 
-        dgeom_info = ternary_info[ternary_info.mhc_class == mhc_class]
+        dgeom_info = my_ternary_info[my_ternary_info.mhc_class == mhc_class]
         if organism=='human': # restrict to human docks
             dgeom_info = dgeom_info[dgeom_info.organism == organism]
         dgeom_info = dgeom_info[~dgeom_info.pdbid.isin(BAD_DGEOM_PDBIDS)]
@@ -1623,10 +1738,10 @@ def make_templates_for_alphafold(
 
             alignstring = ';'.join(f'{i}:{j}' for i,j in trg_to_tmp.items())
 
-            if pmhc_pdbid in pmhc_info.index:
-                pmhc_allele=pmhc_info.loc[pmhc_pdbid, 'mhc_allele']
+            if pmhc_pdbid in my_pmhc_info.index:
+                pmhc_allele=my_pmhc_info.loc[pmhc_pdbid, 'mhc_allele']
             else:
-                pmhc_allele=ternary_info.loc[pmhc_pdbid, 'mhc_allele']
+                pmhc_allele=my_ternary_info.loc[pmhc_pdbid, 'mhc_allele']
 
             outl = OrderedDict(
                 run=run,
@@ -1635,17 +1750,17 @@ def make_templates_for_alphafold(
                 overall_idents=overall_idents,
                 pmhc_pdbid=pmhc_pdbid,
                 pmhc_idents=pmhc_al[-1],
-                pmhc_allele=pmhc_allele,#pmhc_info.loc[pmhc_pdbid, 'mhc_allele'],
+                pmhc_allele=pmhc_allele,#my_pmhc_info.loc[pmhc_pdbid, 'mhc_allele'],
                 tcra_pdbid=tcra_pdbid,
                 tcra_idents=tcra_al[-1],
-                tcra_v   =tcr_info.loc[(tcra_pdbid,'A'), 'v_gene'],
-                tcra_j   =tcr_info.loc[(tcra_pdbid,'A'), 'j_gene'],
-                tcra_cdr3=tcr_info.loc[(tcra_pdbid,'A'), 'cdr3'],
+                tcra_v   =my_tcr_info.loc[(tcra_pdbid,'A'), 'v_gene'],
+                tcra_j   =my_tcr_info.loc[(tcra_pdbid,'A'), 'j_gene'],
+                tcra_cdr3=my_tcr_info.loc[(tcra_pdbid,'A'), 'cdr3'],
                 tcrb_pdbid=tcrb_pdbid,
                 tcrb_idents=tcrb_al[-1],
-                tcrb_v   =tcr_info.loc[(tcrb_pdbid,'B'), 'v_gene'],
-                tcrb_j   =tcr_info.loc[(tcrb_pdbid,'B'), 'j_gene'],
-                tcrb_cdr3=tcr_info.loc[(tcrb_pdbid,'B'), 'cdr3'],
+                tcrb_v   =my_tcr_info.loc[(tcrb_pdbid,'B'), 'v_gene'],
+                tcrb_j   =my_tcr_info.loc[(tcrb_pdbid,'B'), 'j_gene'],
+                tcrb_cdr3=my_tcr_info.loc[(tcrb_pdbid,'B'), 'cdr3'],
                 dgeom_pdbid=f'opt{itmp}' if dgeom_row is None else dgeom_row.pdbid,
                 template_pdbfile=outpdbfile,
                 target_to_template_alignstring=alignstring,

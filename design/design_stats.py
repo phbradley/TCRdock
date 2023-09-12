@@ -521,6 +521,120 @@ def add_info_to_rescoring_row(l, model_name, extend_flex=1):
     return outl
 
 
+
+def compare_models(
+        amodels,
+        bmodels,
+):
+    ''' return a dataframe with the results
+
+    dgeom rmsd (dock rmsd)
+
+    rmsd over all 3 cdr loops (after superimposing on MHC)
+    rmsd over just the cdr3 loop (after superimposing on MHC)
+
+
+    '''
+    from tcrdock.docking_geometry import compute_docking_geometries_distance_matrix
+    assert amodels.shape[0] == bmodels.shape[0]
+
+    required_cols = ('chainseq model_pdbfile organism mhc_class mhc '
+                     'va ja cdr3a vb jb cdr3b').split()
+    assert all(x in amodels.columns for x in required_cols)
+    assert all(x in bmodels.columns for x in required_cols)
+
+    def read_row(row):
+        tdinfo = get_row_tdinfo(row)
+        pose = td2.pdblite.pose_from_pdb(row.model_pdbfile)
+        cbs = [0] + list(it.accumulate(len(x) for x in row.chainseq.split('/')))
+        pose = td2.pdblite.set_chainbounds_and_renumber(pose, cbs)
+        pose = td2.mhc_util.orient_pmhc_pose(pose, tdinfo=tdinfo)
+        dgeom = td2.docking_geometry.get_tcr_pmhc_docking_geometry(pose, tdinfo)
+
+        cdr_coords = {}
+        N, CA, C  = ' N  ', ' CA ', ' C  '
+        cdr_posl = []
+        for ii, loop in enumerate(tdinfo.tcr_cdrs):
+            coords = []
+            for pos in range(loop[0], loop[1]+1):
+                coords.append(pose['coords'][pose['resids'][pos]][N])
+                coords.append(pose['coords'][pose['resids'][pos]][CA])
+                coords.append(pose['coords'][pose['resids'][pos]][C])
+                cdr_posl.append(pos)
+            cdr_coords[ii] = np.array(coords)
+
+        sequence = row.chainseq.replace('/','')
+        chain_number = np.zeros((len(sequence),), dtype=int)
+        for pos in cbs[1:-1]:
+            chain_number[pos:] += 1
+        assert chain_number[0] == 0 and chain_number[-1] == len(pose['chains'])-1
+        cdr_seq = sequence[cdr_posl[0]]
+        for i,j in zip(cdr_posl[:-1], cdr_posl[1:]):
+            if chain_number[i] != chain_number[j]:
+                cdr_seq += '/'
+            elif j!=i+1:
+                cdr_seq += '-'
+            cdr_seq += sequence[j]
+
+
+        return dict(
+            pose=pose,
+            tdinfo=tdinfo,
+            cdr_coords=cdr_coords,
+            dgeom=dgeom,
+            cdr_seq=cdr_seq,
+        )
+
+    dfl = []
+    for (_,row1), (_,row2) in zip(amodels.iterrows(), bmodels.iterrows()):
+
+        d1 = read_row(row1)
+        d2 = read_row(row2)
+
+        outl = {}
+        for tag,inds in [['cdr',range(8)], ['cdr3',[3,7]]]:
+            coords1 = np.concatenate([d1['cdr_coords'][x] for x in inds])
+            coords2 = np.concatenate([d2['cdr_coords'][x] for x in inds])
+            natoms = coords1.shape[0]
+            assert coords2.shape == (natoms,3)
+            outl[tag+'_rmsd'] = np.sqrt(np.sum((coords1-coords2)**2)/natoms)
+
+        outl['dgeom_rmsd'] = compute_docking_geometries_distance_matrix(
+            [d1['dgeom']], [d2['dgeom']], row1.organism)[0,0]
+        outl['model1_cdr_seq'] = d1['cdr_seq']
+        outl['model2_cdr_seq'] = d2['cdr_seq']
+
+        dfl.append(outl)
+    return pd.DataFrame(dfl)
+
+
+
+
+if __name__ == '__main__':
+    tsvfile = ('/home/pbradley/csdat/tcrpepmhc/amir/rf_ab_diff_test1/'
+               'run7_results.tsv')
+    targets = pd.read_table(tsvfile)
+
+    targets = targets.head(10)
+
+    common_cols = 'organism mhc_class mhc va ja cdr3a vb jb cdr3b'.split()
+
+    rfdiff_targets = targets[common_cols+'model_pdbfile chainseq'.split()]
+    af2_targets = targets[common_cols+'af2_model_pdbfile af2_chainseq'.split()]\
+                  .rename(columns={'af2_model_pdbfile':'model_pdbfile',
+                                   'af2_chainseq':'chainseq'})
+    rf2_targets = targets[common_cols+'rf2_model_pdbfile rf2_chainseq'.split()]\
+                  .rename(columns={'rf2_model_pdbfile':'model_pdbfile',
+                                   'rf2_chainseq':'chainseq'})
+    df = compare_models(rfdiff_targets, af2_targets)
+    #df = compare_models(rfdiff_targets, rf2_targets)
+    #df = compare_models(af2_targets, rf2_targets)
+
+
+
+
+    exit()
+
 if __name__ == '__main__':
     # testing
 

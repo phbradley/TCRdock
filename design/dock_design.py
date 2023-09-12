@@ -61,9 +61,12 @@ parser.add_argument('--pmhc_targets', required=True)
 parser.add_argument('--outfile_prefix', required=True)
 parser.add_argument('--allow_mhc_mismatch', action='store_true')
 parser.add_argument('--design_other_cdrs', action='store_true')
+parser.add_argument('--debug', action='store_true')
 parser.add_argument('--num_recycle', type=int, default=3)
 parser.add_argument('--random_state', type=int)
 parser.add_argument('--model_name', default='model_2_ptm_ft_binder')
+parser.add_argument('--skip_rf_antibody', action='store_true',
+                    help='dont run rf_antibody to evaluate the designs')
 parser.add_argument(
     '--model_params_file',
     default=('/home/pbradley/csdat/tcrpepmhc/amir/ft_params/'
@@ -87,7 +90,7 @@ from collections import Counter
 from timeit import default_timer as timer
 
 import design_stats
-from wrapper_tools import run_alphafold, run_mpnn
+import wrapper_tools
 
 
 ## hard-coded -- these control how much sequence is retained from tcr template cdr3s
@@ -125,18 +128,20 @@ cdr3s = big_tcrs_df.sample(n=args.num_designs, replace=True,
 
 dfl = []
 for (_,lpmhc), lcdr3 in zip(pmhcs.iterrows(), cdr3s.itertuples()):
+    assert lpmhc.mhc_class==1 # for the time being...
+    mhc = ':'.join(lpmhc.mhc.split(':')[:2]) # trim allele beyond 2-digit
 
     # look for tcrs with the same allele
-    templates = td2.sequtil.ternary_info.copy()
+    templates = pd.concat([
+        td2.sequtil.ternary_info, td2.sequtil.new_ternary_info])
     templates = templates[templates.organism == lpmhc.organism].copy()
     if args.allow_mhc_mismatch: # only enforce same mhc_class
         templates = templates[templates.mhc_class==lpmhc.mhc_class]
     else: # require same mhc class and same mhc allele
         templates = templates[(templates.mhc_class==lpmhc.mhc_class)&
-                              (templates.mhc_allele==lpmhc.mhc)]
+                              (templates.mhc_allele.str.startswith(mhc))]
     if templates.shape[0] == 0:
-        print('ERROR no matching templates found for mhc:',
-              lpmhc.mhc)
+        print('ERROR no matching templates found for mhc:', mhc)
         exit(1)
 
     outl = lpmhc.copy()
@@ -168,6 +173,7 @@ if not exists(outdir):
 targets = td2.sequtil.setup_for_alphafold(
     tcrs, outdir, num_runs=1, use_opt_dgeoms=True, clobber=True,
     force_tcr_pdbids_column='tcr_template_pdbid',
+    use_new_templates=True,
 )
 
 targets.rename(columns={'target_chainseq':'chainseq',
@@ -196,12 +202,12 @@ targets['designable_positions'] = dfl
 # run alphafold
 outprefix = f'{outdir}_afold1'
 start = timer()
-targets = run_alphafold(
+targets = wrapper_tools.run_alphafold(
     targets, outprefix,
     num_recycle = args.num_recycle,
     model_name = args.model_name,
     model_params_file = args.model_params_file,
-    #dry_run = True,
+    dry_run = args.debug,
 )
 af2_time = timer()-start
 
@@ -213,23 +219,46 @@ targets = design_stats.compute_simple_stats(targets, extend_flex='barf')
 # run mpnn
 outprefix = f'{outdir}_mpnn'
 start = timer()
-targets = run_mpnn(targets, outprefix, extend_flex='barf')
+targets = wrapper_tools.run_mpnn(
+    targets,
+    outprefix,
+    extend_flex='barf',
+    dry_run=args.debug,
+)
 mpnn_time = timer()-start
 
 # run alphafold again
 outprefix = f'{outdir}_afold2'
 start = timer()
-targets = run_alphafold(
+targets = wrapper_tools.run_alphafold(
     targets, outprefix,
     num_recycle=args.num_recycle,
     model_name = args.model_name,
     model_params_file = args.model_params_file,
+    dry_run = args.debug,
     ignore_identities = True, # since mpnn changed sequence...
 )
 af2_time += timer()-start
 
 # compute stats again. this should compute docking rmsd to the original mpnn dock
 targets = design_stats.compute_simple_stats(targets, extend_flex='barf')
+
+if not args.skip_rf_antibody:
+    start = timer()
+
+    outprefix = f'{outdir}_rf2'
+    rf_targets = wrapper_tools.run_rf_antibody_on_designs(targets, outprefix)
+    rf2_time = timer()-start
+    targets['rf2_time'] = rf2_time/args.num_designs
+
+    for col in 'model_pdbfile rfab_pbind rfab_pmhc_tcr_pae'.split():
+        targets['rf2_'+col] = rf_targets[col]
+
+    df = design_stats.compare_models(targets, rf_targets)
+    for col in 'dgeom_rmsd cdr3_rmsd cdr_rmsd'.split():
+        targets['rf2_'+col] = df[col]
+    targets['cdr_seq'] = df['model1_cdr_seq']
+
 
 # write results
 targets['af2_time'] = af2_time/args.num_designs

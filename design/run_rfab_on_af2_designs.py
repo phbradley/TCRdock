@@ -51,7 +51,7 @@ for _,l in targets.iterrows():
     d_dgeom = td2.docking_geometry.DockingGeometry().from_dict(dginfo)
 
     # find likely templates, compute dgeom distance
-    templates = td2.sequtil.ternary_info
+    templates = pd.concat([td2.sequtil.ternary_info, td2.sequtil.new_ternary_info])
     t_dgeoms = [td2.docking_geometry.DockingGeometry().from_dict(x)
                 for _,x in templates.iterrows()]
     outl['min_td1']=td2.docking_geometry.compute_docking_geometries_distance_matrix(

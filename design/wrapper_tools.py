@@ -421,7 +421,9 @@ def setup_rf_diff_tcr_template(pdbid, nterm_seq_stem=3, cterm_seq_stem=2):
     outfile = (f'{td2.util.path_to_db}/rf_diff_templates/'
                f'{pdbid}_tcr_n{nterm_seq_stem}_c{cterm_seq_stem}.pdb')
 
-    row = td2.sequtil.ternary_info.loc[pdbid]
+    all_ternary_info = pd.concat([td2.sequtil.ternary_info,
+                                  td2.sequtil.new_ternary_info])
+    row = all_ternary_info.loc[pdbid]
     print('setup_rf_diff_tcr_template:', pdbid, outfile)
 
     pdbfile = str(td2.util.path_to_db / row.pdbfile)
@@ -485,7 +487,9 @@ def setup_rf_diff_pmhc_template(pdbid, n_hotspot=3):
 
     outfile = f'{td2.util.path_to_db}/rf_diff_templates/{pdbid}_pmhc_hs{n_hotspot}.pdb'
 
-    row = td2.sequtil.ternary_info.loc[pdbid]
+    all_ternary_info = pd.concat([td2.sequtil.ternary_info,
+                                  td2.sequtil.new_ternary_info])
+    row = all_ternary_info.loc[pdbid]
     cbs = [0]+list(it.accumulate(len(x) for x in row.chainseq.split('/')))
     assert len(cbs) == row.mhc_class + 4 # == num_chains + 1
     nres_mhc = cbs[-4]
