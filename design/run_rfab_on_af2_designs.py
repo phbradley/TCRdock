@@ -71,7 +71,9 @@ for _,l in targets.iterrows():
 
 targets = pd.DataFrame(dfl)
 
-results = wrapper_tools.run_rf_antibody_on_designs(targets, args.outfile_prefix+'run_rfab')
+results = wrapper_tools.run_rf_antibody_on_designs(
+    targets, args.outfile_prefix+'run_rfab'
+)
 
 dfl = []
 for ii, row in results.reset_index(drop=True).iterrows():

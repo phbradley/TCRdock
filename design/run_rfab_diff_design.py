@@ -66,13 +66,6 @@ import wrapper_tools
 import design_stats
 
 
-# temporary restrictions, could relax:
-assert args.pmhc_pdbid in td2.sequtil.ternary_info.index
-assert args.tcr_pdbid in td2.sequtil.ternary_info.index
-
-# also temporary, makes rfabdiff output parsing easier below
-assert td2.sequtil.ternary_info.loc[args.pmhc_pdbid].mhc_class == 1
-
 def get_my_designable_positions(tdinfo):
     ''' add _my in fxn name since get_designable_positions defined in design_stats.py
 
@@ -100,6 +93,15 @@ def get_my_designable_positions(tdinfo):
 
         designable_positions.extend(range(loop[0]+npad, loop[1]+1-cpad))
     return designable_positions
+
+templates = pd.concat([td2.sequtil.ternary_info, td2.sequtil.new_ternary_info])
+
+# temporary restrictions, could relax:
+assert args.pmhc_pdbid in templates.index
+assert args.tcr_pdbid in templates.index
+
+# also temporary, makes rfabdiff output parsing easier below
+assert templates.loc[args.pmhc_pdbid].mhc_class == 1
 
 
 ######################################################################################
@@ -172,12 +174,12 @@ rfdiff_time = timer()-start
 #
 dfl = []
 
-tcr_row = td2.sequtil.ternary_info.loc[args.tcr_pdbid]
+tcr_row = templates.loc[args.tcr_pdbid]
 tdifile = str(td2.util.path_to_db / tcr_row.pdbfile)+'.tcrdock_info.json'
 with open(tdifile, 'r') as f:
     tdinfo_tcr_pdb = td2.tcrdock_info.TCRdockInfo().from_string(f.read())
 
-pmhc_row = td2.sequtil.ternary_info.loc[args.pmhc_pdbid]
+pmhc_row = templates.loc[args.pmhc_pdbid]
 tdifile = str(td2.util.path_to_db / pmhc_row.pdbfile)+'.tcrdock_info.json'
 with open(tdifile, 'r') as f:
     tdinfo_pmhc_pdb = td2.tcrdock_info.TCRdockInfo().from_string(f.read())
@@ -342,6 +344,7 @@ af2_targets = td2.sequtil.setup_for_alphafold(
     af2_targets, outdir, num_runs=1, use_opt_dgeoms=True, clobber=True,
     force_tcr_pdbids_column='tcr_pdbid',
     force_pmhc_pdbids_column='pmhc_pdbid',
+    use_new_templates=True,
 )
 
 af2_targets.rename(columns={'target_chainseq':'chainseq',
@@ -426,6 +429,20 @@ for tag, results in [['af2',af2_targets],['rf2',rf2_targets]]:
         else:
             targets[tag+'_'+col] = results[col]
 
+# compare the model structures:
+start = timer()
+all_models = {'rfdiff':targets, 'af2':af2_targets, 'rf2':rf2_targets}
+
+for atag, amodels in all_models.items():
+    for btag, bmodels in all_models.items():
+        if btag <= atag:
+            continue
+        df = design_stats.compare_models(amodels, bmodels)
+        for tag in ['cdr_rmsd','cdr3_rmsd','dgeom_rmsd']:
+            targets[f'{atag}_{btag}_{tag}'] = list(df[tag])
+
+targets['eval_time'] = (timer()-start)/args.num_designs
+
 # compute dock rmsds between af and rf models
 af2_dgeoms = [td2.docking_geometry.DockingGeometry().from_dict(x)
               for _,x in af2_targets.iterrows()]
@@ -434,8 +451,8 @@ rf2_dgeoms = [td2.docking_geometry.DockingGeometry().from_dict(x)
 D = td2.docking_geometry.compute_docking_geometries_distance_matrix(
     af2_dgeoms, rf2_dgeoms)
 
-targets['af2_rf2_dgeom_rmsd'] = D[np.arange(args.num_designs),
-                                  np.arange(args.num_designs)]
+targets['af2_rf2_dgeom_rmsd2'] = D[np.arange(args.num_designs),
+                                   np.arange(args.num_designs)]
 
 targets['rfdiff_time'] = rfdiff_time / args.num_designs
 targets[  'mpnn_time'] =   mpnn_time / args.num_designs

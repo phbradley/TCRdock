@@ -148,6 +148,8 @@ new_ternary_info = pd.read_table(new_ternary_tsvfile).set_index('pdbid', drop=Fa
 
 new_tcr_tsvfile = path_to_db / 'new_tcr_templates_2023-06-02.tsv'
 new_tcr_info = pd.read_table(new_tcr_tsvfile).set_index(['pdbid','ab'], drop=False)
+mask = [x not in tcr_info.index for x in new_tcr_info.index]
+new_tcr_info = new_tcr_info[mask].copy()
 
 all_template_poses = {TCR:{}, PMHC:{}, TERNARY:{}}
 
@@ -1830,7 +1832,7 @@ def setup_for_alphafold(
         max_pmhc_count=None,
         random_seed=1, # for subsampling tcrs
         num_runs=3,
-        clobber=False,
+        clobber=True,
         exclude_self_peptide_docking_geometries=False,
         alt_self_peptides_column=None, # this column should be comma-separated
         exclude_pdbids_column=None, # this column should be comma-separated
