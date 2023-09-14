@@ -55,7 +55,7 @@ from alphafold.data import parsers # needed for NEW_ALPHAFOLD
 
 
 # CHANGE THIS (directory where "params/ folder is")
-data_dir="/home/pbradley/csdat/alphafold/data/"
+data_dir = design_paths.AF2_DATA_DIR
 
 
 def load_pdb_coords(
@@ -486,16 +486,6 @@ def load_model_runners(
                 lambda m, n, p: m[:9] == "alphafold", model_params)
             print('ignoring other_params:', other_params)
 
-            # if 2: #HACK -- save just the afold part
-            #     fb = model_params_file.split('/')[-1]
-            #     outfile = ('/home/pbradley/csdat/af2_finetune/new_models/'
-            #                f'{fb[:-4]}_af_part.pkl')
-            #     assert not exists(outfile)
-            #     with open(outfile, 'wb') as f:
-            #         pickle.dump(model_params, f)
-            #     print('made:', outfile)
-            #     exit()
-
         else:
             assert '_ft' not in model_name
             model_params = data.get_model_haiku_params(
@@ -505,28 +495,3 @@ def load_model_runners(
             model_config, model_params)
     return model_runners
 
-if __name__ == '__main__':
-
-    # which pdbs have chainbreaks?
-    tsvfile = '/home/pbradley/tcr_scripts/pdb_tcr_info_2021-08-05_original_sent.tsv'
-    pdbids = [x.split()[0] for x in open(tsvfile,'r')][1:]
-    print(len(pdbids))
-    for pdbid in pdbids:
-        pdbfile = glob(f'/home/pbradley/csdat/tcrpepmhc/tcrdock_pdbs/{pdbid}*pdb')
-        assert len(pdbfile) == 1
-        pdbfile = pdbfile[0]
-        #print(pdbfile)
-        res = load_pdb_coords(
-            pdbfile, allow_skipped_lines=True, allow_chainbreaks=True)
-
-
-
-# if 0: # debugging
-#     pdbfiles = glob('/home/pbradley/csdat/tcrpepmhc/amir/reorient/????.*pdb')
-#     assert len(pdbfiles) == 96
-#     for ip, pdbfile in enumerate(pdbfiles):
-#         print('read:', ip, pdbfile)
-
-#         chains, all_resids, all_coords, all_name1s = load_pdb_coords(
-#             pdbfile, allow_chainbreaks=True)
-#     exit()

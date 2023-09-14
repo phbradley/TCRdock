@@ -123,7 +123,7 @@ if design_paths.FRED_HUTCH_HACKS:
 
 
 # CHANGE THIS (directory where "params/ folder is")
-data_dir="/home/pbradley/csdat/alphafold/data/"
+data_dir = design_paths.AF2_DATA_DIR
 
 start_time = timer()
 

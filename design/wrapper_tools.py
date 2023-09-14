@@ -318,9 +318,6 @@ def run_rf_antibody_on_designs(
 
     assert targets.targetid.value_counts().max()==1 # unique
 
-    model = ('/home/pbradley/gitrepos/rf_antibody/models/'
-             'May23_noframework_nosidechains_H3swap/RFab__RFab_ab_best_May10.pt')
-    assert exists(model)
     assert exists(design_paths.RFAB_PYTHON)
     assert exists(design_paths.RFAB_SCRIPT)
 
@@ -368,7 +365,8 @@ def run_rf_antibody_on_designs(
 
 
     cmd = (f'{design_paths.RFAB_PYTHON} {design_paths.RFAB_SCRIPT} '
-           f' --model_path {model} --mask_ab_sidechains --mask_target_sidechains '
+           f' --model_path {design_paths.RFAB_CHK} '
+           f' --mask_ab_sidechains --mask_target_sidechains '
            f' --num_recycles 10 --max_crop 1000 --output_path {outdir} '
            f' --sequence_json {outfile} > {outprefix}.log 2> {outprefix}.err')
     print(cmd)

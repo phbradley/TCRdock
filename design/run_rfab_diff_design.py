@@ -106,11 +106,7 @@ assert templates.loc[args.pmhc_pdbid].mhc_class == 1
 
 ######################################################################################
 ## run rf antibody diffusion
-##
-PY = '/home/pbradley/anaconda2/envs/SE3nv/bin/python'
-EXE='/home/pbradley/gitrepos/rf_diffusion_netdbabsoft/rf_diffusion/run_inference.py'
-CHK = ('/home/pbradley/gitrepos/rf_diffusion_netdbabsoft/rf_diffusion/'
-       'model_weights/BFF_70.pt')
+
 
 tcr_pdbfile, design_loops = wrapper_tools.setup_rf_diff_tcr_template(
     args.tcr_pdbid,
@@ -149,8 +145,9 @@ for num in range(args.num_designs):
         remove(pdbfile)
 
 
-cmd = (f'{PY} {EXE} --config-name antibody '
-       f' inference.ckpt_override_path={CHK} '
+cmd = (f'{design_paths.RFDIFF_PYTHON} {design_paths.RFDIFF_SCRIPT} '
+       f' --config-name antibody '
+       f' inference.ckpt_override_path={design_paths.RFDIFF_CHK} '
        f' inference.num_designs={args.num_designs} '
        f' diffuser.T={DIFFUSER_T} '
        f' antibody.target_pdb={pmhc_pdbfile} '
