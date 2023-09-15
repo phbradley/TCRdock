@@ -65,7 +65,7 @@ assert tcrs.shape[0] == len(args.template_pdbids)
 
 print('num pdb targets:', tcrs.shape[0])
 
-tcrs_file = '/home/pbradley/csdat/big_covid/big_combo_tcrs_2022-01-22.tsv'
+tcrs_file = design_paths.PAIRED_TCR_DB
 print('reading:', tcrs_file)
 big_tcrs_df = pd.read_table(tcrs_file)
 

@@ -58,12 +58,10 @@ parser.add_argument('--force_tcr_pdbids_column',
 parser.add_argument('--model_name', default='model_2_ptm_ft_binder',
                     help='this doesnt really matter but it has to start with '
                     '"model_2_ptm_ft"')
-parser.add_argument(
-    '--model_params_file',
-    default=('/home/pbradley/csdat/tcrpepmhc/amir/ft_params/'
-             'model_2_ptm_ft_binder_20230729.pkl'),
-    help='The default is a binder-fine-tuned model that was trained on structures '
-    'and a new distillation set')
+
+parser.add_argument('--model_params_file',
+                    help='The default is a binder-fine-tuned model that was trained '
+                    'on structures and a new distillation set')
 
 parser.add_argument('--ala_scan', action='store_true',
                     help='For each design, add additional decoy pmhcs corresponding to '
@@ -100,6 +98,9 @@ from collections import Counter
 from tcrdock.tcrdist.amino_acids import amino_acids
 from design_stats import compute_simple_stats
 from wrapper_tools import run_alphafold, run_mpnn
+
+if args.model_params_file is None:
+    args.model_params_file = design_paths.AF2_BINDER_FT_PARAMS
 
 # these are really not very important, just for calc peptide_loop_pae in
 #   design_stats.compute_simple_stats

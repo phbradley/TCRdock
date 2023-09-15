@@ -64,13 +64,16 @@ parser.add_argument('--design_other_cdrs', action='store_true')
 parser.add_argument('--debug', action='store_true')
 parser.add_argument('--num_recycle', type=int, default=3)
 parser.add_argument('--random_state', type=int)
-parser.add_argument('--model_name', default='model_2_ptm_ft_binder')
 parser.add_argument('--skip_rf_antibody', action='store_true',
                     help='dont run rf_antibody to evaluate the designs')
-parser.add_argument(
-    '--model_params_file',
-    default=('/home/pbradley/csdat/tcrpepmhc/amir/ft_params/'
-             'model_2_ptm_ft_binder_20230729.pkl'))
+
+parser.add_argument('--model_name', default='model_2_ptm_ft_binder',
+                    help='this doesnt really matter but it has to start with '
+                    '"model_2_ptm_ft"')
+
+parser.add_argument('--model_params_file',
+                    help='The default is a binder-fine-tuned model that was trained '
+                    'on structures and a new distillation set')
 #parser.add_argument('--rundir')
 #parser.add_argument('--loop_design_extra_args', default = '')
 #parser.add_argument('--random_state',type=int, default=11)
@@ -92,6 +95,8 @@ from timeit import default_timer as timer
 import design_stats
 import wrapper_tools
 
+if args.model_params_file is None:
+    args.model_params_file = design_paths.AF2_BINDER_FT_PARAMS
 
 ## hard-coded -- these control how much sequence is retained from tcr template cdr3s
 nterm_seq_stem = 3
@@ -106,7 +111,7 @@ for col in required_cols:
     assert col in pmhc_targets.columns, f'Need {col} in --pmhc_targets'
 
 # read the big paired tcr database, this provides the random cdr3a/cdr3b pairs
-tcrs_file = '/home/pbradley/csdat/big_covid/big_combo_tcrs_2022-01-22.tsv'
+tcrs_file = design_paths.PAIRED_TCR_DB
 print('reading:', tcrs_file)
 big_tcrs_df = pd.read_table(tcrs_file)
 
@@ -134,6 +139,16 @@ for (_,lpmhc), lcdr3 in zip(pmhcs.iterrows(), cdr3s.itertuples()):
     # look for tcrs with the same allele
     templates = pd.concat([
         td2.sequtil.ternary_info, td2.sequtil.new_ternary_info])
+
+    # need templates that are als in tcr-info
+    tcr_chains = pd.concat([td2.sequtil.tcr_info, td2.sequtil.new_tcr_info]).index
+    a_pdbids = set(x[0] for x in tcr_chains if x[1] == 'A')
+    b_pdbids = set(x[0] for x in tcr_chains if x[1] == 'B')
+    goodmask = templates.pdbid.isin(a_pdbids&b_pdbids)
+    print('subset to good tcr pdbids:', goodmask.sum(), templates.shape[0])
+    templates = templates[goodmask]
+
+
     templates = templates[templates.organism == lpmhc.organism].copy()
     if args.allow_mhc_mismatch: # only enforce same mhc_class
         templates = templates[templates.mhc_class==lpmhc.mhc_class]

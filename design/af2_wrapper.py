@@ -114,15 +114,6 @@ if design_paths.FRED_HUTCH_HACKS:
     os.environ["TF_FORCE_UNIFIED_MEMORY"] = '1'
     os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = '2.0'
 
-# fiddling around:
-
-#2021-10-14 12:13:06.884915: W external/org_tensorflow/tensorflow/stream_executor/platform/default/dso_loader.cc:64] Could not load dynamic library 'libcusolver.so.11'; dlerror: libcusolver.so.11: cannot open shared object file: No such file or directory; LD_LIBRARY_PATH: /home/pbradley/src/lib:/home/pbradley/src/lib:
-#  518  export LD_LIBRARY_PATH=/home/pbradley/anaconda2/envs/af2/lib:$LD_LIBRARY_PATH
-
-
-
-
-# CHANGE THIS (directory where "params/ folder is")
 data_dir = design_paths.AF2_DATA_DIR
 
 start_time = timer()

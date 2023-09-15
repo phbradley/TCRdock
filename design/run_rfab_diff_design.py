@@ -38,11 +38,13 @@ parser.add_argument('--n_hotspot', type=int, default=3)
 #                     help='choose cdr3lens from a big db of paired tcrs')
 parser.add_argument('--cdr3_lens', help='specify cdr3a length range and cdr3b length '
                     'range, looks like "13-15,14-17" ')
-parser.add_argument('--model_name', default='model_2_ptm_ft_binder')
-parser.add_argument(
-    '--model_params_file',
-    default=('/home/pbradley/csdat/tcrpepmhc/amir/ft_params/'
-             'model_2_ptm_ft_binder_20230729.pkl')) # see read_amir_models
+parser.add_argument('--model_name', default='model_2_ptm_ft_binder',
+                    help='this doesnt really matter but it has to start with '
+                    '"model_2_ptm_ft"')
+
+parser.add_argument('--model_params_file',
+                    help='The default is a binder-fine-tuned model that was trained '
+                    'on structures and a new distillation set')
 
 args = parser.parse_args()
 
@@ -65,6 +67,8 @@ from timeit import default_timer as timer
 import wrapper_tools
 import design_stats
 
+if args.model_params_file is None:
+    args.model_params_file = design_paths.AF2_BINDER_FT_PARAMS
 
 def get_my_designable_positions(tdinfo):
     ''' add _my in fxn name since get_designable_positions defined in design_stats.py
