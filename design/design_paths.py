@@ -29,7 +29,9 @@ else: # UW paths??
     MPNN_PYTHON = AF2_PYTHON
     PYROSETTA_PYTHON = '/software/containers/pyrosetta.sif'
     LOOP_DESIGN_PYTHON = AF2_PYTHON # most will work here
-
+    RFDIFF_PYTHON = '/software/containers/RF_diffusion.sif'
+    # of should we use ??
+    #RFDIFF_PYTHON = '/software/containers/RF_allatom_diffusion.sif'
 
     AF2_DATA_DIR = '/net/databases/lab/tcr_design/alphafold_default_params/' # where params/ lives
     # from: /home/amotmaen/for/phil/rfab/run_denovo.sh
