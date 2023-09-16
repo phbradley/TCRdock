@@ -1,5 +1,5 @@
 # change these as needed
-FRED_HUTCH_HACKS = True
+FRED_HUTCH_HACKS = False
 if FRED_HUTCH_HACKS:
     AF2_PYTHON = '/home/pbradley/anaconda2/envs/af2/bin/python'
     AF2_DATA_DIR = '/home/pbradley/csdat/alphafold/data/' # where params/ lives
@@ -17,19 +17,21 @@ if FRED_HUTCH_HACKS:
                 'May23_noframework_nosidechains_H3swap/RFab__RFab_ab_best_May10.pt')
     PAIRED_TCR_DB = '/home/pbradley/csdat/big_covid/big_combo_tcrs_2022-01-22.tsv'
     AF2_BINDER_FT_PARAMS = '/home/pbradley/csdat/tcrpepmhc/amir/ft_params/model_2_ptm_ft_binder_20230729.pkl'
+    MPNN_SCRIPT = '/home/pbradley/gitrepos/ProteinMPNN/protein_mpnn_run.py'
 
 else: # UW paths??
     # the old ones
-    AF2_PYTHON  = '/home/justas/.conda/envs/mlfold-test/bin/python'
-    MPNN_PYTHON = '/home/justas/.conda/envs/mlfold-test/bin/python'
-    PYROSETTA_PYTHON = '/software/conda/envs/pyrosetta/bin/python'
-    LOOP_DESIGN_PYTHON = AF2_PYTHON # most will work here
+    #AF2_PYTHON  = '/home/justas/.conda/envs/mlfold-test/bin/python'
+    #MPNN_PYTHON = '/home/justas/.conda/envs/mlfold-test/bin/python'
+    #PYROSETTA_PYTHON = '/software/conda/envs/pyrosetta/bin/python'
     # try these new ones:
     AF2_PYTHON = '/software/containers/mlfold.sif'
     MPNN_PYTHON = AF2_PYTHON
     PYROSETTA_PYTHON = '/software/containers/pyrosetta.sif'
     LOOP_DESIGN_PYTHON = AF2_PYTHON # most will work here
     RFDIFF_PYTHON = '/software/containers/RF_diffusion.sif'
+    RFAB_PYTHON = '/software/containers/SE3nv.sif'
+
     # of should we use ??
     #RFDIFF_PYTHON = '/software/containers/RF_allatom_diffusion.sif'
 
@@ -50,8 +52,7 @@ else: # UW paths??
     PAIRED_TCR_DB = '/net/databases/lab/tcr_design/big_combo_tcrs_2022-01-22.tsv'
     AF2_BINDER_FT_PARAMS = '/net/databases/lab/tcr_design/finetuned_alphafold_parameters/model_2_ptm_ft_binder_20230729.pkl'
 
-MPNN_SCRIPT = '/home/pbradley/gitrepos/ProteinMPNN/protein_mpnn_run.py'
-
+    MPNN_SCRIPT = '/software/lab/mpnn/proteinmpnn/protein_mpnn_run.py'
 
 ##
 
