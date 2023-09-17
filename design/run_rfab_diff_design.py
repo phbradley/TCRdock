@@ -34,8 +34,6 @@ parser.add_argument('--nterm_seq_stem', type=int, default=3,
 parser.add_argument('--cterm_seq_stem', type=int, default=2,
                     help='number of non-designable positions at CDR3 C-terminus')
 parser.add_argument('--n_hotspot', type=int, default=3)
-# parser.add_argument('--random_cdr3lens', action = 'store_true',
-#                     help='choose cdr3lens from a big db of paired tcrs')
 parser.add_argument('--cdr3_lens', help='specify cdr3a length range and cdr3b length '
                     'range, looks like "13-15,14-17" ')
 parser.add_argument('--model_name', default='model_2_ptm_ft_binder',

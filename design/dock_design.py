@@ -4,7 +4,7 @@ import argparse
 parser = argparse.ArgumentParser(
     description="alphafold dock design",
     epilog='''
-Flexible dock design using the "random loops" approach
+Flexible-dock tcr design using the "random loops" approach
 
 input is a TSV file with peptide-MHC target info (allele name, peptide seq)
 
@@ -16,6 +16,8 @@ STEP 2. pick a template tcr for that pmhc target. By default this will be a tcr 
 binds to the same MHC allele. This template contributes the following information:
 * va, ja, vb, jb (the V and J genes for the alpha and beta chains)
 * the first 3 and last 2 residues of the CDR3 loops
+
+    --tcr_pdbids <pdbid1> ... <pdbidN> will instead pick templates from the given pdbids
 
     --allow_mhc_mismatch will expand the set of potential templates to include all
 tcrs that bind the same MHC class

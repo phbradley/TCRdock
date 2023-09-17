@@ -5,7 +5,7 @@ parser = argparse.ArgumentParser(
     description="run peptide specificity testing on good designs",
     epilog=
 '''
-This script is designed for evaluating a small-ish number of good designs
+This script is for evaluating a small-ish number of good designs
 for binding to a set of decoy peptides.
 
 A TSV file of designs is passed with the --designs <filename> option.
@@ -19,6 +19,7 @@ A TSV file of decoy peptides is passed with the --decoys <filename> option.
 The required fields are:
    organism mhc_class mhc peptide
 
+You don't need the --decoys file if you use either of the next two options:
 --ala_scan will add all the single-ala mutant peptides as decoys
 --x_scan will add all the single-aa mutant peptides as decoys
 
@@ -32,6 +33,11 @@ OR (we can skip --decoys if --ala_scan or --x_scan are present)
 python dock_spectest.py --designs my_good_designs.tsv \
     --ala_scan  --outfile_prefix test2
 
+# this will divide the work into 5 batches and run batch 0
+python dock_spectest.py --designs my_good_designs.tsv \
+    --x_scan  --outfile_prefix test3_b0 \
+    --num_batches 5 --batch_num 0
+
 
 email pbradley@fredhutch.org with questions
 
@@ -39,13 +45,11 @@ email pbradley@fredhutch.org with questions
     formatter_class=argparse.RawDescriptionHelpFormatter,
 )
 
-parser.add_argument('--batch_num', type=int)
-parser.add_argument('--num_batches', type=int)
-parser.add_argument('--decoys_batch_num', type=int)
-parser.add_argument('--decoys_num_batches', type=int)
 parser.add_argument('--decoys')
 parser.add_argument('--designs', required=True)
 parser.add_argument('--outfile_prefix', required=True)
+parser.add_argument('--batch_num', type=int)
+parser.add_argument('--num_batches', type=int)
 parser.add_argument('--num_recycle', type=int, default=3)
 parser.add_argument('--force_pmhc_pdbids_column',
                     help='For rfdiff designs, when we remodel with alphafold '
