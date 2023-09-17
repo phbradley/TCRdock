@@ -60,6 +60,7 @@ email pbradley@fredhutch.org with questions
 parser.add_argument('--num_designs', type=int, required=True)
 parser.add_argument('--pmhc_targets', required=True)
 parser.add_argument('--outfile_prefix', required=True)
+parser.add_argument('--tcr_pdbids', nargs='*')
 parser.add_argument('--allow_mhc_mismatch', action='store_true')
 parser.add_argument('--design_other_cdrs', action='store_true')
 parser.add_argument('--debug', action='store_true')
@@ -151,7 +152,11 @@ for (_,lpmhc), lcdr3 in zip(pmhcs.iterrows(), cdr3s.itertuples()):
 
 
     templates = templates[templates.organism == lpmhc.organism].copy()
-    if args.allow_mhc_mismatch: # only enforce same mhc_class
+    if args.tcr_pdbids:
+        templates = templates[templates.pdbid.isin(args.tcr_pdbids)]
+        print('--tcr_pdbids:', args.tcr_pdbids)
+        print('actual template pdbids:', list(templates.pdbid))
+    elif args.allow_mhc_mismatch: # only enforce same mhc_class
         templates = templates[templates.mhc_class==lpmhc.mhc_class]
     else: # require same mhc class and same mhc allele
         templates = templates[(templates.mhc_class==lpmhc.mhc_class)&
