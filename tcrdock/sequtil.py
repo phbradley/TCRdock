@@ -1253,7 +1253,8 @@ def make_templates_for_alphafold(
     if use_new_templates:
         my_ternary_info = pd.concat([ternary_info, new_ternary_info])
         my_tcr_info = pd.concat([tcr_info, new_tcr_info])
-        my_pmhc_info = pd.concat([pmhc_info, new_ternary_info])
+        badmask = new_ternary_info.pdbid.isin(set(pmhc_info.pdbid))
+        my_pmhc_info = pd.concat([pmhc_info, new_ternary_info[~badmask]])
     else:
         my_ternary_info = ternary_info
         my_tcr_info = tcr_info

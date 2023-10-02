@@ -65,6 +65,7 @@ parser.add_argument('--outfile_prefix', required=True)
 parser.add_argument('--tcr_pdbids', nargs='*')
 parser.add_argument('--allow_mhc_mismatch', action='store_true')
 parser.add_argument('--design_other_cdrs', action='store_true')
+parser.add_argument('--design_cdrs', type=int, nargs='*')
 parser.add_argument('--debug', action='store_true')
 parser.add_argument('--num_recycle', type=int, default=3)
 parser.add_argument('--random_state', type=int)
@@ -199,25 +200,25 @@ targets = td2.sequtil.setup_for_alphafold(
     use_new_templates=True,
 )
 
+if args.design_other_cdrs:
+    which_cdrs = [0,1,3,4,5,7]
+elif args.design_cdrs:
+    which_cdrs = args.design_cdrs[:]
+else:
+    which_cdrs = [3,7]
+
+
 targets.rename(columns={'target_chainseq':'chainseq',
                         'templates_alignfile':'alignfile'}, inplace=True)
 dfl = []
 for l in targets.itertuples():
     posl = []
-    if args.design_other_cdrs: # designing the other cdr loops here
-        tdinfo = design_stats.get_row_tdinfo(l)
-        for ii, loop in enumerate(tdinfo.tcr_cdrs):
-            if ii in [2,6]: # skip cdr2.5
-                continue
-            npad, cpad = (nterm_seq_stem, cterm_seq_stem) if ii in [3,7] else \
-                         (0,0)
-            posl.extend(range(loop[0]+npad, loop[1]+1-cpad))
-    else:
-        seq = l.chainseq.replace('/','')
-        for s in [l.cdr3a, l.cdr3b]:
-            assert seq.count(s) == 1
-            start = seq.index(s)
-            posl.extend(range(start+nterm_seq_stem, start+len(s)-cterm_seq_stem))
+    tdinfo = design_stats.get_row_tdinfo(l)
+    for ii in which_cdrs:
+        loop = tdinfo.tcr_cdrs[ii]
+        npad, cpad = (nterm_seq_stem, cterm_seq_stem) if ii in [3,7] else \
+                     (0,0)
+        posl.extend(range(loop[0]+npad, loop[1]+1-cpad))
     dfl.append(','.join([str(x) for x in posl]))
 targets['designable_positions'] = dfl
 

@@ -128,6 +128,7 @@ def run_mpnn(
         outprefix,
         num_mpnn_seqs=3,
         extend_flex=1,
+        constant_seed=None,
         dry_run=False,
 ):
     ''' Returns results df
@@ -177,13 +178,15 @@ def run_mpnn(
             for val in vals:
                 f.write(json.dumps(val) + '\n')
 
+    seedarg = '' if constant_seed is None else f' --seed {constant_seed} '
+
     cmd = (f'{design_paths.MPNN_PYTHON} {design_paths.MPNN_SCRIPT} '
            f' --jsonl_path            {outprefix}_pc.jsonl '
            f' --chain_id_jsonl        {outprefix}_ac.jsonl '
            f' --fixed_positions_jsonl {outprefix}_fp.jsonl '
            f' --out_folder {outdir} --num_seq_per_target {num_mpnn_seqs} '
            f' --sampling_temp "0.1" '
-           f' --seed 37 --batch_size 1 > {outprefix}_run.log '
+           f' {seedarg} --batch_size 1 > {outprefix}_run.log '
            f' 2> {outprefix}_run.err')
     print(cmd, flush=True)
     if not dry_run:
@@ -211,6 +214,9 @@ def run_mpnn(
             top_seq = [x for x,y in seq_counts.most_common()
                        if y==top_count][0]
         else:
+            # should use constant_seed here also to eliminate randomness!
+            if constant_seed:
+                print('run_mpnn: still some randomness in random.choice!')
             top_seq = random.choice([x for x,y in seq_counts.most_common()
                                      if y==top_count])
         top_seqs = top_seq.split('/')

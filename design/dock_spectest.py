@@ -75,6 +75,10 @@ parser.add_argument('--x_scan', action='store_true',
                     help='For each design, add additional decoy pmhcs corresponding to '
                     'all single AA peptide mutants')
 
+parser.add_argument('--other_scan', action='store_true',
+                    help='For each design, add additional decoy pmhcs from the same '
+                    'or other mhcs and lens')
+
 parser.add_argument('--skip_wt', action='store_true',
                     help='Otherwise the wt pmhc will be included in the calcs')
 
@@ -100,6 +104,7 @@ import os
 import random
 from collections import Counter
 from tcrdock.tcrdist.amino_acids import amino_acids
+import tcrdock.util
 from design_stats import compute_simple_stats
 from wrapper_tools import run_alphafold, run_mpnn
 
@@ -113,9 +118,12 @@ if args.model_params_file is None:
 nterm_seq_stem = 3
 cterm_seq_stem = 2
 
+if args.other_scan:
+    other_fname = tcrdock.util.path_to_db / 'hla_binding_decoy_peptides_v1.tsv'
+    other_decoys = pd.read_table(other_fname)
 
 if args.decoys is None:
-    assert args.ala_scan or args.x_scan
+    assert args.ala_scan or args.x_scan or args.other_scan
     decoys = pd.DataFrame() # empty
 else:
     decoys = pd.read_table(args.decoys)
@@ -197,8 +205,22 @@ for _, ltcr in designs.iterrows():
 
                 dfl.append(outl)
 
-
-
+    if args.other_scan:
+        for mhc in other_decoys.mhc.unique():
+            if mhc == ltcr.mhc:
+                num = 100
+            else:
+                num = 25
+            odf = other_decoys[other_decoys.mhc==mhc].sample(num, random_state=10)
+            for _,lpmhc in odf.iterrows():
+                assert lpmhc.organism == ltcr.organism
+                outl = ltcr.copy()
+                mhc_tag = mhc.replace('*','').replace(':','')
+                outl['targetid'] = f'{ltcr.targetid}_pep_{mhc_tag}_{lpmhc.peptide}'
+                outl['mhc_class'] = lpmhc.mhc_class
+                outl['mhc'] = lpmhc.mhc
+                outl['peptide'] = lpmhc.peptide
+                dfl.append(outl)
 
 tcrs = pd.DataFrame(dfl)
 if args.num_batches:

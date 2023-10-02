@@ -14,8 +14,9 @@ inputs:
 
 '''
 
-required_cols = ('targetid chainseq model_pdbfile '
-                 'template_0_target_to_template_alignstring'.split())
+required_cols = 'targetid chainseq model_pdbfile'.split()
+need_one_of_cols = 'designable_positions template_0_target_to_template_alignstring'\
+                   .split()
 
 import os
 import design_paths
@@ -26,12 +27,17 @@ parser = argparse.ArgumentParser(description="evaluate designs")
 parser.add_argument('--targets', required=True)
 parser.add_argument('--outfile_prefix', required=True)
 parser.add_argument('--relax_rescored_model', action='store_true')
+parser.add_argument('--skip_alphafold', action='store_true')
+parser.add_argument('--skip_rosetta', action='store_true')
+parser.add_argument('--ex_flags', action='store_true')
 parser.add_argument('--extend_flex', type=int, default=1)
+parser.add_argument('--num_batches', type=int, default=1)
+parser.add_argument('--batch_num', type=int, default=0)
 
 
 args = parser.parse_args()
 
-if design_paths.FRED_HUTCH_HACKS:
+if design_paths.FRED_HUTCH_HACKS and not args.skip_alphafold:
     assert os.environ['LD_LIBRARY_PATH'].startswith(
         '/home/pbradley/anaconda2/envs/af2/lib:'),\
         'export LD_LIBRARY_PATH=/home/pbradley/anaconda2/envs/af2/lib:$LD_LIBRARY_PATH'
@@ -81,7 +87,7 @@ def run_alphafold_rescoring(
         sequence = l.chainseq.replace('/','')
         nres = len(sequence)
         cbs = [0]+list(it.accumulate(len(x) for x in l.chainseq.split('/')))
-        nres_mhc, nres_pmhc = cbs[1:3]
+        nres_mhc, nres_pmhc = cbs[-4:-2]
 
         loop_flex_posl = get_designable_positions(row=l, extend_flex=extend_flex)
 
@@ -112,13 +118,15 @@ def run_alphafold_rescoring(
         l2 = add_info_to_rescoring_row(l2, model_name, extend_flex=0)
         if hasattr(l,'peptide'):
             assert l.peptide == l2.peptide
-        if hasattr(l,'loop_seq'):
-            assert l.loop_seq == l2.loop_seq
+        # not sure about this next one if we are tweaking designable_positions
+        # if hasattr(l,'loop_seq'):
+        #     assert l.loop_seq == l2.loop_seq
 
         outl = l.copy()
         outl['rescore_peptide_plddt'] = l2.peptide_plddt
         outl['rescore_loop_plddt'] = l2.loop_plddt
         outl['rescore_peptide_loop_pae'] = l2.peptide_loop_pae
+        outl['rescore_pmhc_tcr_pae'] = l2.pmhc_tcr_pae
         outl['rescore_peptide'] = l2.peptide
         outl['rescore_loop_seq'] = l2.loop_seq
         outl['rescore_model_pdbfile'] = l2.model_pdbfile
@@ -176,19 +184,19 @@ def run_rosetta_relax(targets, outprefix, ex_flags = False):
         results.relax_peptide_loop_intxn / (results.peplen*results.looplen))
 
     targets = targets.join(results, on='targetid', rsuffix='_r')
-    if 'peptide' in targets.columns:
-        assert all(targets.peptide == targets.relax_peptide)
-    if 'loop_seq' in targets.columns:
-        assert all(targets.loop_seq == targets.relax_loop_seq)
-    assert all(targets.rescore_peptide == targets.relax_peptide)
-    assert all(targets.rescore_loop_seq == targets.relax_loop_seq)
+    # if 'peptide' in targets.columns:
+    #     assert all(targets.peptide == targets.relax_peptide)
+    # if 'loop_seq' in targets.columns:
+    #     assert all(targets.loop_seq == targets.relax_loop_seq)
+    # assert all(targets.rescore_peptide == targets.relax_peptide)
+    # assert all(targets.rescore_loop_seq == targets.relax_loop_seq)
 
     new_cols = ('relax_bound_score '
                 'relax_peptide_score relax_peptide_score_len_norm '
                 'relax_loop_score relax_loop_score_len_norm '
                 'relax_peptide_loop_intxn relax_peptide_loop_intxn_len_norm '
                 'relaxed_peptide_rmsd relaxed_loop_rmsd '
-                'relax_binding_energy_frozen relax_time').split()
+                'relax_binding_energy_frozen relax_loop_seq relax_time').split()
 
     return targets[original_cols+new_cols]
 
@@ -200,16 +208,24 @@ targets = pd.read_table(args.targets)
 
 for col in required_cols:
     assert col in targets.columns, f'Need {col} column in {args.targets}'
+assert any(col in targets.columns for col in need_one_of_cols),\
+    f'Need one of {" ".join(need_one_of_cols)}'
 
-assert targets.targetid.value_counts().max() == 1 # no dups
+if targets.targetid.value_counts().max() >1:
+    targets['targetid'] = [f'{x}_{i}' for i,x in enumerate(targets.targetid)]
 
-# run alphafold rescoring
-outprefix = f'{args.outfile_prefix}_afold_rescore'
-targets = run_alphafold_rescoring(targets, outprefix)
+mask = np.arange(targets.shape[0])%args.num_batches == args.batch_num
+print(f'num_batches: {args.num_batches} batch_num: {args.batch_num} '
+      f'subset to {mask.sum()} out of {targets.shape[0]} targets')
+targets = targets[mask].copy()
 
-# run rosetta relax
-outprefix = f'{args.outfile_prefix}_relax'
-targets = run_rosetta_relax(targets, outprefix)
+if not args.skip_alphafold: # run alphafold rescoring
+    outprefix = f'{args.outfile_prefix}_afold_rescore'
+    targets = run_alphafold_rescoring(targets, outprefix)
+
+if not args.skip_rosetta: # run rosetta relax
+    outprefix = f'{args.outfile_prefix}_relax'
+    targets = run_rosetta_relax(targets, outprefix, ex_flags=args.ex_flags)
 
 # write results
 targets.to_csv(f'{args.outfile_prefix}_final_results.tsv', sep='\t', index=False)

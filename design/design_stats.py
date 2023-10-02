@@ -45,7 +45,12 @@ def get_designable_positions(
         reverse=False,
         num_contigs=2, # for debugging
 ):
-    ''' the unaligned position plus extend_flex rsds on either side of each contig
+    ''' this is way too complicated
+
+    moving toward just using row.designable_positions
+
+    old comment:
+    the unaligned position plus extend_flex rsds on either side of each contig
     '''
     if hasattr(row, 'designable_positions'):
         posl = [int(x) for x in row.designable_positions.split(',')]
@@ -480,16 +485,21 @@ def add_info_to_rescoring_row(l, model_name, extend_flex=1):
     plddts = np.load(l[f'{model_name}_plddt_file'])[:nres]
     paes = np.load(l[f'{model_name}_predicted_aligned_error_file'])[:nres,:nres]
 
+    cbs = [0] + list(it.accumulate(len(x) for x in l.chainseq.split('/')))
+    nres_mhc, nres_pmhc = cbs[-4:-2]
     gap_posl = [i for i,x in enumerate(l.template_0_alt_template_sequence)
                 if x not in amino_acids]
-    gap_starts = [i for i in gap_posl if i-1 not in gap_posl]
-    gap_stops  = [i+1 for i in gap_posl if i+1 not in gap_posl]
-    assert len(gap_starts) == 3 and len(gap_stops) == 3
-    bounds = list(zip(gap_starts, gap_stops))
-    pep_inds = list(range(*bounds[0]))
+    pep_inds = [x for x in gap_posl if x < nres_pmhc]
+    loop_inds = [x for x in gap_posl if x >= nres_pmhc]
+    assert all(x>=nres_mhc for x in pep_inds)
+    #gap_starts = [i for i in gap_posl if i-1 not in gap_posl]
+    #gap_stops  = [i+1 for i in gap_posl if i+1 not in gap_posl]
+    #assert len(gap_starts) == 3 and len(gap_stops) == 3
+    #bounds = list(zip(gap_starts, gap_stops))
+    #pep_inds = list(range(*bounds[0]))
     peptide = ''.join(sequence[x] for x in pep_inds)
     peptide_plddt = plddts[pep_inds].mean()
-    loop_inds = list(it.chain(range(*bounds[1]), range(*bounds[2])))
+    #loop_inds = list(it.chain(range(*bounds[1]), range(*bounds[2])))
     if extend_flex:
         new_loop_inds = set()
         for pos in loop_inds:
@@ -503,6 +513,9 @@ def add_info_to_rescoring_row(l, model_name, extend_flex=1):
     peptide_loop_pae = 0.5 * (
         paes[pep_inds,:][:,loop_inds].mean() +
         paes[loop_inds,:][:,pep_inds].mean())
+    pmhc_tcr_pae = 0.5*(
+        paes[:nres_pmhc,:][:,nres_pmhc:].mean() +
+        paes[nres_pmhc:,:][:,:nres_pmhc].mean())
     mask_char = set(x for x in l.template_0_alt_template_sequence
                     if x not in amino_acids)
     assert len(mask_char) == 1
@@ -517,6 +530,7 @@ def add_info_to_rescoring_row(l, model_name, extend_flex=1):
     outl['loop_seq'] = loop_seq
     outl['peptide_loop_pae'] = peptide_loop_pae
     outl['mask_char'] = mask_char
+    outl['pmhc_tcr_pae'] = pmhc_tcr_pae
 
     return outl
 

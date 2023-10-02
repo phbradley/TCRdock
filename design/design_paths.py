@@ -61,11 +61,14 @@ from pathlib import Path
 
 path_to_tcrdock = Path(__file__).parents[1].resolve() # also path to alphafold
 path_to_design_scripts = Path(__file__).parents[0].resolve()
+path_to_filelock = (Path(__file__).parents[1].resolve() /
+                    'FileLock')
 
 def setup_import_paths():
     if str(path_to_tcrdock) != sys.path[0]:
         sys.path.insert(0, str(path_to_tcrdock))
-
+    if str(path_to_filelock) not in sys.path:
+        sys.path.append(str(path_to_filelock))
 
 
 

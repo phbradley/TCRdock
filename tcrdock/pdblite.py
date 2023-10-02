@@ -443,3 +443,98 @@ def find_chainbreaks(
         return chainbreaks, total_chainbreak_by_chain
     else:
         return chainbreaks
+
+def pose_from_cif(
+        fname,
+        require_bb=True,
+        require_CA=True,
+        use_author_chains=False,
+):
+    #ATOM   1    N N   . GLU A 1 4   ? -62.685  20.483 -39.874 1.000 111.067 ? 3   GLU AAA N   1
+
+    data = open(fname,'r')
+
+    atom_fields = []
+
+    coords = {}
+    resids = []
+    name1s = {}
+
+    achain2chain = {} # debug
+
+    for line in data:
+        if line.startswith('_atom_site.'):
+            atom_fields.append(line.strip()[11:])
+            #print('atom_field:', atom_fields[-1])
+        elif line[:6] in ['ATOM  ','HETATM']:
+            l = line.split()
+            assert len(l) == len(atom_fields)
+            info = dict(zip(atom_fields, l))
+            atom_name = info['label_atom_id'] # no whitespace!!
+            altloc = info['label_alt_id']
+            resname = info['label_comp_id']
+            if atom_name == 'HOH' or resname not in long2short_MSE:
+                continue
+            chain = info['label_asym_id']
+            if use_author_chains:
+                achain = info['auth_asym_id']
+                if achain in achain2chain:
+                    assert achain2chain[achain] == chain
+                else:
+                    achain2chain[achain] = chain
+                chain = achain[0]
+            chain_number_maybe = info['label_entity_id']
+            insert = info['pdbx_PDB_ins_code']
+            xyz = np.array([float(info['Cartn_'+x]) for x in 'xyz'])
+
+            resnum = int(info['label_seq_id'])
+
+            if insert in ['.','?']:
+                resid = f'{resnum:4d} '
+            else:
+                assert len(insert) == 1
+                resid = f'{resnum:4d}{insert}'
+
+            if len(atom_name)<4:
+                if atom_name[0].isdigit(): #hydrogen?
+                    assert atom_name[1] == 'H'
+                    lpad = ''
+                else:
+                    lpad = ' '
+                atom_name = lpad+atom_name+' '*(4-len(lpad+atom_name))
+            assert len(atom_name) == 4
+
+            assert len(chain) == 1
+
+            resid = (chain, resid)
+            if resid not in resids:
+                resids.append(resid)
+                coords[resid] = {}
+                name1s[resid] = long2short_MSE[resname]
+
+            if atom_name in coords[resid]:
+                print('WARNING: take first xyz for atom, ignore others:',
+                      chain, resid, atom_name, 'altloc:', altloc, fname)
+            else:
+                coords[resid][atom_name] = xyz
+    data.close()
+
+
+    N, CA, C  = ' N  ', ' CA ', ' C  '
+    require_atoms = [N,CA,C] if require_bb else [CA] if require_CA else []
+    if require_atoms:
+        bad_resids = [x for x,y in coords.items()
+                      if any(a not in y for a in require_atoms)]
+        if bad_resids:
+            print('missing one of', require_atoms, bad_resids)
+            for r in bad_resids:
+                resids.remove(r)
+
+    sequence = ''.join(name1s[x] for x in resids)
+
+    pose = {'resids':resids, 'coords':coords, 'sequence':sequence}
+
+    pose = update_derived_data(pose)
+
+    return pose
+

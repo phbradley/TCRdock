@@ -8,6 +8,7 @@ from pathlib import Path
 import pandas as pd
 from .util import amino_acids, standard_three_letter_codes, path_to_db
 
+
 def get_pdbfile(pdbid, desired_filename, verbose=False, clobber=False):
     if exists(desired_filename) and not clobber:
         print('tcrdock.pdb_util.get_pdbfile:: file already exists:',
@@ -30,6 +31,30 @@ def get_pdbfile(pdbid, desired_filename, verbose=False, clobber=False):
         system(f'mv {filename} {desired_filename}')
     assert exists( desired_filename )
     return desired_filename
+
+
+
+def get_ciffile(pdbid, desired_filename, verbose=False, clobber=False):
+    if exists(desired_filename) and not clobber:
+        print('get_ciffile:: WARNING file already exists, skipping:', desired_filename)
+        return desired_filename
+    pdbid = pdbid.lower()
+    cmd = f'wget https://files.rcsb.org/download/{pdbid}.cif.gz'
+    print(cmd)
+    system(cmd)
+    fname = f'{pdbid}.cif.gz'
+    if not exists(fname):
+        print('ERROR get_ciffile failed:', pdbid)
+        return None
+    system('gunzip -f '+fname)
+    fname = fname[:-3]
+    assert exists(fname)
+    if (not os.path.exists(desired_filename) or
+        not os.path.samefile(fname, desired_filename)):
+        system(f'mv {fname} {desired_filename}')
+    assert exists(desired_filename)
+    return desired_filename
+
 
 pdb_protein_three_letter_codes = None
 def get_pdb_protein_three_letter_codes():
@@ -125,4 +150,3 @@ def setup_pdb_protein_three_letter_codes():
     df = pd.DataFrame(dfl)
     df.to_csv(outfile, sep='\t', index=False)
     print('made:', outfile)
-

@@ -13,8 +13,11 @@ Flexibility:
 
 '''
 
-targets_required_cols = (
-    'chainseq model_pdbfile template_0_target_to_template_alignstring'.split())
+targets_required_cols = 'chainseq model_pdbfile'.split()
+
+# need these in order to be able to define the flexible loops in the design
+targets_need_one_of_cols = (
+    'template_0_target_to_template_alignstring designable_positions').split()
 
 import argparse
 
@@ -55,6 +58,7 @@ num_to_process = sum(x%args.subset_mod==args.subset_index
 print(f'read {targets.shape[0]} targets, will process {num_to_process}')
 for col in targets_required_cols:
     assert col in targets.columns, f'Need column {col} in targets TSV file'
+assert any(col in targets.columns for col in targets_need_one_of_cols)
 
 ### more imports
 from timeit import default_timer as timer
@@ -290,12 +294,14 @@ for ind, row in targets.iterrows():
     cs = row.chainseq.split('/')
     cbs = [0] + list(it.accumulate(len(x) for x in cs))
     assert len(cs) == pose.num_chains()
-    assert pose.num_chains() == 4 #?
+    assert pose.num_chains() in [4,5]
 
     # this will likely be everything in the CDR3s between CAX and XF
     loop_posl = [x+1 for x in get_designable_positions(row=row)]
 
-    pep_posl = list(range(cbs[1]+1, cbs[2]+1)) # 1-indexed
+    nres_mhc, nres_pmhc = cbs[-4:-2]
+    peptide_chain = pose.num_chains()-2
+    pep_posl = list(range(nres_mhc+1, nres_pmhc+1)) # 1-indexed
 
     start_pose = pose.clone()
 
@@ -320,7 +326,7 @@ for ind, row in targets.iterrows():
     # calculate interaction energies between peptide and loops
     unbound_pose = pose.clone()
 
-    unbind_tcr(2, unbound_pose) # 2 is peptide_chain
+    unbind_tcr(peptide_chain, unbound_pose)
     unbound_score_frozen = eval_scorefxn(unbound_pose)
 
     binding_energy_frozen = bound_score - unbound_score_frozen
