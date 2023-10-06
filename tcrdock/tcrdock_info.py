@@ -48,8 +48,8 @@ class TCRdockInfo():
             mhc_aseq, # '' if tcr_only
             mhc_bseq, # ignored if mhc_class==1
             pep_seq, # '' if tcr_only
-            tcr_aseq,
-            tcr_bseq,
+            tcr_aseq, # pass None or '' if mhc_only
+            tcr_bseq, # ditto
     ):
         self.valid = False
         self.organism = organism
@@ -80,6 +80,11 @@ class TCRdockInfo():
         if -1 in self.mhc_core:
             print('TCRdockInfo:: MHC parse fail!')
             return self ########## early return
+
+        if not tcr_aseq and not tcr_bseq:
+            # mhc only
+            self.valid = True
+            return self
 
         # this shifts everything to full pose numbering (0-indexed)
         offset = len(mhc_aseq) + len(pep_seq)

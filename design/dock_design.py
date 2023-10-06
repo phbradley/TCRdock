@@ -67,6 +67,7 @@ parser.add_argument('--allow_mhc_mismatch', action='store_true')
 parser.add_argument('--design_other_cdrs', action='store_true')
 parser.add_argument('--design_cdrs', type=int, nargs='*')
 parser.add_argument('--debug', action='store_true')
+parser.add_argument('--use_pmhc_pdbfile', action='store_true')
 parser.add_argument('--num_recycle', type=int, default=3)
 parser.add_argument('--random_state', type=int)
 parser.add_argument('--skip_rf_antibody', action='store_true',
@@ -115,6 +116,14 @@ required_cols = 'organism mhc_class mhc peptide'.split()
 for col in required_cols:
     assert col in pmhc_targets.columns, f'Need {col} in --pmhc_targets'
 
+if args.use_pmhc_pdbfile:
+    # Need pdbfile column and also pdbid column (used for tcrdock internal mapping junk)
+    # can't match any existing pdbids
+    assert 'pdbfile' in pmhc_targets.columns and 'pdbid' in pmhc_targets.columns
+    pdbids = set(pmhc_targets.pdbid)
+    assert not any(x in td2.sequtil.ternary_info.index for x in pdbids)
+    assert not any(x in td2.sequtil.new_ternary_info.index for x in pdbids)
+
 # read the big paired tcr database, this provides the random cdr3a/cdr3b pairs
 tcrs_file = design_paths.PAIRED_TCR_DB
 print('reading:', tcrs_file)
@@ -135,6 +144,17 @@ pmhcs = pmhc_targets.sample(n=args.num_designs, replace=True,
 
 cdr3s = big_tcrs_df.sample(n=args.num_designs, replace=True,
                            random_state=args.random_state)
+
+
+outdir = f'{args.outfile_prefix}_tmp/'
+if not exists(outdir):
+    mkdir(outdir)
+
+if args.use_pmhc_pdbfile: # add in some extra templates for af2 modeling
+    extra_pmhc_templates = wrapper_tools.setup_extra_pmhc_templates(
+        pmhcs, outdir+'pmhc_tmpl_')
+else:
+    extra_pmhc_templates = None
 
 dfl = []
 for (_,lpmhc), lcdr3 in zip(pmhcs.iterrows(), cdr3s.itertuples()):
@@ -186,17 +206,18 @@ for (_,lpmhc), lcdr3 in zip(pmhcs.iterrows(), cdr3s.itertuples()):
     outl['jb'] = ltcr.jb
     outl['cdr3b'] = cdr3b
     outl['tcr_template_pdbid'] = ltcr.pdbid
+    if args.use_pmhc_pdbfile:
+        outl['pmhc_template_pdbid'] = lpmhc.pdbid
     dfl.append(outl)
 
 tcrs = pd.DataFrame(dfl)
 
-outdir = f'{args.outfile_prefix}_tmp/'
-if not exists(outdir):
-    mkdir(outdir)
 
 targets = td2.sequtil.setup_for_alphafold(
     tcrs, outdir, num_runs=1, use_opt_dgeoms=True, clobber=True,
     force_tcr_pdbids_column='tcr_template_pdbid',
+    force_pmhc_pdbids_column='pmhc_template_pdbid' if args.use_pmhc_pdbfile else None,
+    extra_pmhc_templates=extra_pmhc_templates,
     use_new_templates=True,
 )
 

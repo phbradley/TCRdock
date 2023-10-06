@@ -521,6 +521,75 @@ def setup_rf_diff_pmhc_template(pdbid, n_hotspot=3):
     return outfile, hotspot_string
 
 
+def setup_extra_pmhc_templates(pmhcs, outfile_prefix):
+    ''' This is for adding additional pMHC templates into the AF2 modeling
+    See dock_design.py for an example
+    '''
+    import tcrdock.setup
+    required_cols = 'organism mhc_class pdbfile pdbid'.split()
+    dfl = []
+
+    seen = set()
+    for _, l in pmhcs.iterrows():
+        if l.pdbfile in seen:
+            continue
+        seen.add(l.pdbfile)
+
+        pose, tdinfo = td2.setup.load_and_setup_tcrdock_pose(
+            l.pdbfile, l.organism, l.mhc_class, pmhc_only=True
+        )
+
+        new_pdbfile = f'{outfile_prefix}{l.pdbid}_orient.pdb'
+        td2.pdblite.dump_pdb(pose, new_pdbfile)
+        print('made:', new_pdbfile)
+        tdifile = new_pdbfile+'.tcrdock_info.json'
+        with open(tdifile, 'w') as f:
+            f.write(tdinfo.to_string())
+            print('made:', tdifile)
+
+        mhc_seq, tmp = pose['chainseq'].split('/')
+        assert tmp == tdinfo.pep_seq
+
+        mhc_alignseq = td2.sequtil.get_mhc_class_1_mhc_alignseq_from_chainseq(
+            tdinfo.mhc_allele, mhc_seq, info=l.pdbfile)
+
+        breaks, totals = td2.pdblite.find_chainbreaks(
+            pose, return_total_chainbreak_by_chain=True)
+
+        mhc_total_chainbreak = sum(totals[:l.mhc_class])
+        pep_chainbreak = totals[l.mhc_class]
+        assert pep_chainbreak < 1e-2
+
+        mhc = ':'.join(tdinfo.mhc_allele.split(':')[:2]) # trim extra ":01:01" junk
+        outl = dict(
+            organism=l.organism,
+            mhc_class=l.mhc_class,
+            mhc_allele=mhc,
+            pep_seq=tdinfo.pep_seq,
+            pdbfile = new_pdbfile,
+            chainseq = pose['chainseq'],
+            mhc_alignseq=mhc_alignseq,
+            mhc_total_chainbreak = mhc_total_chainbreak,
+            pdbid=l.pdbid,
+        )
+        dfl.append(outl)
+
+    extra_pmhc_templates = pd.DataFrame(dfl).set_index('pdbid', drop=False)
+    return extra_pmhc_templates
+
+
+if __name__ == '__main__':
+    pmhcs = pd.DataFrame([dict(
+        organism = 'human',
+        mhc_class = 1,
+        pdbfile = '/home/pbradley/csdat/tcrpepmhc/amir/A2-PAP.pdb',
+        pdbid = 'a2pp',
+    )])
+    extra_pmhc_templates = setup_extra_pmhc_templates(pmhcs, 'tmptest')
+    print(extra_pmhc_templates.iloc[0])
+    exit()
+
+
 if __name__ == '__main__':
 
     pdbids = ['1oga','3o4l','3gsn']

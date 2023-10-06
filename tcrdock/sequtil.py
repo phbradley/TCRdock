@@ -741,7 +741,7 @@ def get_mhc_class_1_mhc_alignseq_from_chainseq(
 
 
 
-def get_template_pose_and_tdinfo(pdbid, complex_type):
+def get_template_pose_and_tdinfo(pdbid, complex_type, extra_info=None):
     ''' returns pose, tdinfo
     complex_type should be in {TCR, TERNARY, PMHC}
     '''
@@ -750,7 +750,9 @@ def get_template_pose_and_tdinfo(pdbid, complex_type):
         pdbfile = set(info[info.pdbid==pdbid].pdbfile)
         if not pdbfile:
             # right now we only have class 1 in the special pmhc info...
-            if complex_type == PMHC and pdbid in ternary_info.index:
+            if extra_info is not None and pdbid in extra_info.index:
+                info = extra_info
+            elif complex_type == PMHC and pdbid in ternary_info.index:
                 info = all_template_info[TERNARY] # NOTE NOTE NOTE
             elif complex_type in [PMHC, TERNARY] and pdbid in new_ternary_info.index:
                 print('WARNING: using pdb from new_ternary_info:', pdbid)
@@ -766,7 +768,9 @@ def get_template_pose_and_tdinfo(pdbid, complex_type):
                 exit(1)
             pdbfile = set(info[info.pdbid==pdbid].pdbfile)
         assert len(pdbfile) == 1
-        pdbfile = str(path_to_db) + '/' + pdbfile.pop()
+        pdbfile = pdbfile.pop() # TCRpepMHC version
+        if pdbfile[0] != '/':
+            pdbfile = str(path_to_db) + '/' + pdbfile # TCRdock version
         #print('read:', pdbfile)
         pose = pdblite.pose_from_pdb(pdbfile)
         tdifile = pdbfile+'.tcrdock_info.json'
@@ -1207,6 +1211,7 @@ def make_templates_for_alphafold(
         force_tcr_pdbids=None,
         use_opt_dgeoms=False,
         use_new_templates=False, # from the 2023-06-02 update
+        extra_pmhc_templates=None,
 ):
     ''' Makes num_templates_per_run * num_runs template pdb files
 
@@ -1260,6 +1265,10 @@ def make_templates_for_alphafold(
         my_tcr_info = tcr_info
         my_pmhc_info = pmhc_info
 
+    if extra_pmhc_templates is not None:
+        ind0 = extra_pmhc_templates.index[0]
+        assert len(ind0) == 4 # pdbids? maybe fake ones...
+        my_pmhc_info = pd.concat([my_pmhc_info, extra_pmhc_templates])
 
     def show_alignment(al,seq1,seq2):
         if verbose:
@@ -1622,7 +1631,9 @@ def make_templates_for_alphafold(
                 dgeom_row = dgeom_info.iloc[rep_dgeom_indices[dgeom_repno]]
 
             pmhc_pdbid = pmhc_al[1]
-            pmhc_pose, pmhc_tdinfo = get_template_pose_and_tdinfo(pmhc_pdbid, PMHC)
+            pmhc_pose, pmhc_tdinfo = get_template_pose_and_tdinfo(
+                pmhc_pdbid, PMHC, extra_info=extra_pmhc_templates,
+            )
 
             tcra_pdbid = tcra_al[1]
             tcra_pose, tcra_tdinfo = get_template_pose_and_tdinfo(tcra_pdbid, TCR)

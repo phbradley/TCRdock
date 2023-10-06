@@ -1,44 +1,88 @@
-'''
+import argparse
+
+parser = argparse.ArgumentParser(
+    description="iterative dock design refinement",
+epilog='''
+
+Iterative refinement of a starting pool of flexible-dock TCR designs
+distributed across multiple processes.
+
+The criterion for defining an improved design is given by the --sort_tag flag.
+
+Current criteria (lower is better):
+* pmhc_tcr_pae: AF2 pmc_tcr_pae
+* combo_score: af2_pmhc_tcr_pae + rfab_pmhc_tcr_pae + af2_rfab_cdr3_rmsd
+* combo_score_wtd: 2*af2_pmhc_tcr_pae + 1*rfab_pmhc_tcr_pae + 0.5*af2_rfab_cdr3_rmsd
+
+whichever criterion is used should already be a column in the starting poolfile.
 
 
-Each process reads a pool, selects some members of the pool for refinement,
+Each process reads the pool, selects some members of the pool for refinement,
 and then at the end potentially adds the refined members to the pool
 
 parameters:
 
-max_pool_size -- eg 500
+--max_pool_size: eg 500
 
-max_per_lineage -- eg 10 (will start with 1 per lineage)
+--max_per_lineage: eg 10 (will start with 1 per lineage). Lineage is defined by a
+'lineage' column in the input --poolfile
 
-num_parents -- eg 10
+--num_parents: eg 10, the number of starting designs each process will select
+from the pool.
+These designs don't interact with one another, the reason to do more than 1 is just
+so that the alphafold calculations can be done together to amortize the computational
+cost of model compilation.
 
-num_mutations -- eg 2, number of mutations to make
+--num_mutations: eg 2, number of mutations to make
+
+Here's the process:
+
+1. start by picking --num_parents members from the pool
+
+2. make --num_mutations random sequence mutations to each one, with mutations
+occurring at the positions given in the 'designable_positions' column
+
+3. alphafold-dock them (re-using alignfile and template info if present)
+
+4. MPNN them
+
+5. alphafold-dock them
+
+6. save the results
+
+7. read the new poolfile (which might have been modified by other processes in the
+meantime): do any of these new designs we made make the cut? if so, add them to
+the pool subject to --max_per_lineage and --max_pool_size
 
 
-start: pick num_parents members from the pool
 
-make num_variants random variants of each, total = num_parents*num_variants = eg 20
+Example command line:
 
-alphafold-dock them
+python dock_refine.py  --max_pool_size 80 \\
+    --max_per_lineage 10  --num_parents 10 \\
+    --num_mutations 2  --sort_tag combo_score_wtd \\
+    --poolfile /home/pbradley/csdat/tcrpepmhc/amir/run408_A0201_TLMSAMTNL_pool.tsv \\
+    --outfile_prefix /home/pbradley/csdat/tcrpepmhc/amir/slurm/run408/run408_A0201_TLMSAMTNL_00228
 
-mpnn them
+The --poolfile file should have (at least) these columns:
 
-alphafold-dock them
+    * chainseq
+    * lineage
+    * designable_positions (comma-separated list, made by dock_design.py)
+    * pmhc_tcr_pae -OR- combo_score -OR- combo_score_wtd , depends on --sort_tag
 
-save the results
-
-read the new pool: do any of these make the cut? if so, add them to the pool
-subject to max_per_lineage and max_pool_size
-
-
+AND EITHER
+    * alignfile (so we don't have to run alphafold setup again)
+OR
+    * organism, mhc, mhc_class, peptide, va, ja, cdr3a, vb, jb, cdr3b (for af2 setup)
 
 
-'''
+email pbradley@fredhutch.org with questions
 
-import argparse
+''',
+    formatter_class=argparse.RawDescriptionHelpFormatter,
+)
 
-parser = argparse.ArgumentParser(
-    description="iterative dock design refinement")
 
 parser.add_argument('--poolfile', required=True)
 parser.add_argument('--outfile_prefix', required=True)
@@ -50,11 +94,13 @@ parser.add_argument('--max_per_lineage', type=int, default=10)
 
 parser.add_argument('--force_tcr_pdbids_column')
 
-parser.add_argument('--sort_tag', default='pmhc_tcr_pae',
+parser.add_argument('--sort_tag', required=True,
                     choices = ['pmhc_tcr_pae', 'combo_score', 'combo_score_wtd'])
 parser.add_argument('--debug', action='store_true')
 parser.add_argument('--drop_duplicates', action='store_true')
-parser.add_argument('--run_rfab', action='store_true')
+parser.add_argument('--run_rfab', action='store_true',
+                    help='Whether to run rf_antibody on the designs; if --sort_tag is '
+                    'combo_score or combo_score_wtd, this is automatically done')
 parser.add_argument('--num_recycle', type=int, default=3)
 
 parser.add_argument('--model_name', default='model_2_ptm_ft_binder',
@@ -76,26 +122,22 @@ if args.sort_tag in ['combo_score', 'combo_score_wtd']:
 
 ## more imports ####################
 import sys
+import pandas as pd
+import numpy as np
+import random
+from os import system, popen, mkdir
 from sys import exit
 import itertools as it
+from timeit import default_timer as timer
+from scipy.stats import describe
 from pathlib import Path
 from os.path import exists, isdir
 import os
 import design_paths # local
 design_paths.setup_import_paths()
 from tcrdock.tcrdist.amino_acids import amino_acids
-import pandas as pd
-import numpy as np
-import random
-from os import system, popen, mkdir
 from filelock.filelock import FileLock
-from timeit import default_timer as timer
-from scipy.stats import describe
 
-#from glob import glob
-#from collections import Counter
-#import scipy
-#import json
 # local imports
 import design_stats
 import wrapper_tools
@@ -156,9 +198,9 @@ with FileLock(args.poolfile, timeout=120, delay=0.3) as lock:
     pool = pd.read_table(args.poolfile)
     parents = pool.sample(n=args.num_parents)
 
-print('read pool:', describe(pool[args.sort_tag]))
-
 required_columns = 'lineage designable_positions chainseq'.split()
+required_columns.append(args.sort_tag) # need
+
 if 'alignfile' in parents.columns and all(exists(x) for x in set(parents.alignfile)):
     RUN_AF2_SETUP = False
 else:
@@ -202,8 +244,9 @@ if RUN_AF2_SETUP:
     parents.rename(columns={'target_chainseq':'chainseq',
                              'templates_alignfile':'alignfile'}, inplace=True)
     assert all(parents.chainseq==parents.old_chainseq),\
-        'dock_refine.py only working for cdr3 designs right now...'
-
+        ('dock_refine.py is only working for cdr3 designs right now... '
+         'unless we can re-use the old alignfile info. Talk to Phil if '
+         'this is a limitation, cuz its fixable')
 
 
 

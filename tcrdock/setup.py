@@ -11,6 +11,7 @@ def load_and_setup_tcrdock_pose(
         class1_mhc_maxlen=181,
         class2_mhc_maxlen=95,
         class2_mhc_npad = 4,# residues before the first core position...
+        pmhc_only = False,
 ):
     ''' Returns pose, TCRdockInfo
 
@@ -29,17 +30,20 @@ def load_and_setup_tcrdock_pose(
     pose = pdblite.pose_from_pdb(pdb_filename) # require_bb=True is the default
 
     if mhc_class == 1:
-        assert len(pose['chains']) in [4,5]
+        assert ((not pmhc_only) and len(pose['chains']) in [4,5] or
+                pmhc_only and len(pose['chains']) in [2,3])
         if pose['chainbounds'][1] > class1_mhc_maxlen:
             pose = pdblite.delete_residue_range(
                 pose, class1_mhc_maxlen, pose['chainbounds'][1])
-        if len(pose['chains']) == 5:
+        if (not pmhc_only and len(pose['chains']) == 5 or
+            pmhc_only and len(pose['chains']) == 3):
             # delete B2M
             pose = pdblite.delete_residue_range(
                 pose, pose['chainbounds'][1], pose['chainbounds'][2])
     else:
         assert mhc_class == 2
-        if len(pose['chains']) != 5:
+        if (not pmhc_only and len(pose['chains']) != 5 or
+            pmhc_only and len(pose['chains']) != 3):
             print('bad num chains for class 2 pose', pose['chains'],
                   pdb_filename)
             return None, None
@@ -67,12 +71,12 @@ def load_and_setup_tcrdock_pose(
                 pose = pdblite.delete_residue_range(
                     pose, cb+class2_mhc_maxlen, ce)
 
-    assert len(pose['chains']) == 3+mhc_class
+    assert len(pose['chains']) == 3+mhc_class-2*pmhc_only
     cs = pose['chainseq'].split('/')
-    tcr_seqs = cs[-2:]
+    tcr_seqs = [None,None] if pmhc_only else cs[-2:]
     mhc_aseq = cs[0]
     mhc_bseq = '' if mhc_class==1 else cs[1]
-    pep_seq = cs[-3]
+    pep_seq = cs[mhc_class]
     tdi = TCRdockInfo().from_sequences(
         organism, mhc_class, mhc_aseq, mhc_bseq, pep_seq, *tcr_seqs)
 
@@ -80,19 +84,20 @@ def load_and_setup_tcrdock_pose(
         print('load_and_setup_tcrdock_pose:: tdinfo parse error:', pdb_filename)
         return None, None
 
-    # now trim the ends of the tcr chains, if necessary
-    for ich in range(2):
-        ch = mhc_class+1+ich
-        cb, ce = pose['chainbounds'][ch:ch+2]
-        cdr_num = 3 + 4*ich # 3 or 7
-        cdr3_stop = tdi.tcr_cdrs[cdr_num][1]
-        #print(ch, cdr_num, tdi.tcr_cdrs[cdr_num], ch)
-        maxpos = cdr3_stop + 3 + 8 # GXG then 8 rsds
-        if ce > maxpos+1:
-            print('setup.load_and_setup_tcrdock_pose: trimming tcr chain:',
-                  ch, ce-(maxpos+1))
-            pose = pdblite.delete_residue_range(pose, maxpos+1, ce)
-            tdi.delete_residue_range(maxpos+1, ce)
+    if not pmhc_only:
+        # now trim the ends of the tcr chains, if necessary
+        for ich in range(2):
+            ch = mhc_class+1+ich
+            cb, ce = pose['chainbounds'][ch:ch+2]
+            cdr_num = 3 + 4*ich # 3 or 7
+            cdr3_stop = tdi.tcr_cdrs[cdr_num][1]
+            #print(ch, cdr_num, tdi.tcr_cdrs[cdr_num], ch)
+            maxpos = cdr3_stop + 3 + 8 # GXG then 8 rsds
+            if ce > maxpos+1:
+                print('setup.load_and_setup_tcrdock_pose: trimming tcr chain:',
+                      ch, ce-(maxpos+1))
+                pose = pdblite.delete_residue_range(pose, maxpos+1, ce)
+                tdi.delete_residue_range(maxpos+1, ce)
 
     pose = pdblite.set_chainbounds_and_renumber(pose, list(pose['chainbounds']))
 
