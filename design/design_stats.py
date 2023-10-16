@@ -423,7 +423,7 @@ def compute_simple_stats(
         assert chain_number[0] == 0 and chain_number[-1] == num_chains-1
 
         assert l.mhc_class + 3 == num_chains
-        nres_mhc, nres_pmhc = cbs[-3:-1]
+        nres_mhc, nres_pmhc = cbs[-4:-2]
         flex_posl = get_designable_positions(row=l, extend_flex=extend_flex)
         flex_posl.sort() # probably not necessary
 
