@@ -9,3 +9,4 @@ __pycache__
 *.ptf
 *.pto
 imgt_prot_blast_db_*fasta
+ncbi-blast-*
