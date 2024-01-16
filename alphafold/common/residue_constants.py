@@ -17,7 +17,7 @@
 import collections
 import functools
 import os
-from typing import List, Mapping, Tuple
+from typing import Final, List, Mapping, Tuple
 
 import numpy as np
 import tree
@@ -120,7 +120,7 @@ chi_pi_periodic = [
 # 4,5,6,7: 'chi1,2,3,4-group'
 # The atom positions are relative to the axis-end-atom of the corresponding
 # rotation axis. The x-axis is in direction of the rotation axis, and the y-axis
-# is defined such that the dihedral-angle-definiting atom (the last entry in
+# is defined such that the dihedral-angle-defining atom (the last entry in
 # chi_angles_atoms above) is in the xy-plane (with a positive y-coordinate).
 # format: [atomname, group_idx, rel_position]
 rigid_group_atom_positions = {
@@ -498,6 +498,7 @@ atom_types = [
 atom_order = {atom_type: i for i, atom_type in enumerate(atom_types)}
 atom_type_num = len(atom_types)  # := 37.
 
+
 # A compact atom encoding with 14 columns
 # pylint: disable=line-too-long
 # pylint: disable=bad-whitespace
@@ -608,6 +609,35 @@ restype_1to3 = {
     'Y': 'TYR',
     'V': 'VAL',
 }
+
+PROTEIN_CHAIN: Final[str] = 'polypeptide(L)'
+POLYMER_CHAIN: Final[str] = 'polymer'
+
+
+def atom_id_to_type(atom_id: str) -> str:
+  """Convert atom ID to atom type, works only for standard protein residues.
+
+  Args:
+    atom_id: Atom ID to be converted.
+
+  Returns:
+    String corresponding to atom type.
+
+  Raises:
+    ValueError: If atom ID not recognized.
+  """
+
+  if atom_id.startswith('C'):
+    return 'C'
+  elif atom_id.startswith('N'):
+    return 'N'
+  elif atom_id.startswith('O'):
+    return 'O'
+  elif atom_id.startswith('H'):
+    return 'H'
+  elif atom_id.startswith('S'):
+    return 'S'
+  raise ValueError('Atom ID not recognized.')
 
 
 # NB: restype_3to1 differs from Bio.PDB.protein_letters_3to1 by being a simple
@@ -772,10 +802,10 @@ def _make_rigid_transformation_4x4(ex, ey, translation):
 # and an array with (restype, atomtype, coord) for the atom positions
 # and compute affine transformation matrices (4,4) from one rigid group to the
 # previous group
-restype_atom37_to_rigid_group = np.zeros([21, 37], dtype=np.int)
+restype_atom37_to_rigid_group = np.zeros([21, 37], dtype=int)
 restype_atom37_mask = np.zeros([21, 37], dtype=np.float32)
 restype_atom37_rigid_group_positions = np.zeros([21, 37, 3], dtype=np.float32)
-restype_atom14_to_rigid_group = np.zeros([21, 14], dtype=np.int)
+restype_atom14_to_rigid_group = np.zeros([21, 14], dtype=int)
 restype_atom14_mask = np.zeros([21, 14], dtype=np.float32)
 restype_atom14_rigid_group_positions = np.zeros([21, 14, 3], dtype=np.float32)
 restype_rigid_group_default_frame = np.zeros([21, 8, 4, 4], dtype=np.float32)

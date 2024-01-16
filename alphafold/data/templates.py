@@ -89,8 +89,8 @@ TEMPLATE_FEATURES = {
     'template_aatype': np.float32,
     'template_all_atom_masks': np.float32,
     'template_all_atom_positions': np.float32,
-    'template_domain_names': np.object,
-    'template_sequence': np.object,
+    'template_domain_names': object,
+    'template_sequence': object,
     'template_sum_probs': np.float32,
 }
 
@@ -449,6 +449,7 @@ def _get_atom_positions(
     mask = np.zeros([residue_constants.atom_type_num], dtype=np.float32)
     res_at_position = mmcif_object.seqres_to_structure[auth_chain_id][res_index]
     if not res_at_position.is_missing:
+      assert res_at_position.position is not None
       res = chain[(res_at_position.hetflag,
                    res_at_position.position.residue_number,
                    res_at_position.position.insertion_code)]
@@ -1002,8 +1003,8 @@ class HmmsearchHitFeaturizer(TemplateHitFeaturizer):
               (1, num_res, residue_constants.atom_type_num), np.float32),
           'template_all_atom_positions': np.zeros(
               (1, num_res, residue_constants.atom_type_num, 3), np.float32),
-          'template_domain_names': np.array([''.encode()], dtype=np.object),
-          'template_sequence': np.array([''.encode()], dtype=np.object),
+          'template_domain_names': np.array([''.encode()], dtype=object),
+          'template_sequence': np.array([''.encode()], dtype=object),
           'template_sum_probs': np.array([0], dtype=np.float32)
       }
     return TemplateSearchResult(

@@ -32,6 +32,9 @@ import jax
 import jax.numpy as jnp
 
 
+_SOFTMAX_MASK = -1e9
+
+
 def softmax_cross_entropy(logits, labels):
   """Computes softmax cross entropy given logits and one-hot class labels."""
   loss = -jnp.sum(labels * jax.nn.log_softmax(logits), axis=-1)
@@ -76,6 +79,9 @@ def dropout_wrapper(module,
   residual = module(input_act, mask, is_training=is_training, **kwargs)
   dropout_rate = 0.0 if gc.deterministic else module.config.dropout_rate
 
+  # Will override `is_training` to True if want to use dropout.
+  should_apply_dropout = True if gc.eval_dropout else is_training
+
   if module.config.shared_dropout:
     if module.config.orientation == 'per_row':
       broadcast_dim = 0
@@ -87,7 +93,7 @@ def dropout_wrapper(module,
   residual = apply_dropout(tensor=residual,
                            safe_key=safe_key,
                            rate=dropout_rate,
-                           is_training=is_training,
+                           is_training=should_apply_dropout,
                            broadcast_dim=broadcast_dim)
 
   new_act = output_act + residual
@@ -341,17 +347,18 @@ class AlphaFold(hk.Module):
           compute_loss=compute_loss,
           ensemble_representations=ensemble_representations)
 
-    if self.config.num_recycle:
-      emb_config = self.config.embeddings_and_evoformer
-      prev = {
-          'prev_pos': jnp.zeros(
-              [num_residues, residue_constants.atom_type_num, 3]),
-          'prev_msa_first_row': jnp.zeros(
-              [num_residues, emb_config.msa_channel]),
-          'prev_pair': jnp.zeros(
-              [num_residues, num_residues, emb_config.pair_channel]),
-      }
+    prev = {}
+    emb_config = self.config.embeddings_and_evoformer
+    if emb_config.recycle_pos:
+      prev['prev_pos'] = jnp.zeros(
+          [num_residues, residue_constants.atom_type_num, 3])
+    if emb_config.recycle_features:
+      prev['prev_msa_first_row'] = jnp.zeros(
+          [num_residues, emb_config.msa_channel])
+      prev['prev_pair'] = jnp.zeros(
+          [num_residues, num_residues, emb_config.pair_channel])
 
+    if self.config.num_recycle:
       if 'num_iter_recycling' in batch:
         # Training time: num_iter_recycling is in batch.
         # The value for each ensemble batch is the same, so arbitrarily taking
@@ -378,7 +385,6 @@ class AlphaFold(hk.Module):
             body,
             (0, prev))
     else:
-      prev = {}
       num_iter = 0
 
     ret = do_call(prev=prev, recycle_idx=num_iter)
@@ -501,7 +507,7 @@ class Transition(hk.Module):
     num_intermediate = int(nc * self.config.num_intermediate_factor)
     mask = jnp.expand_dims(mask, axis=-1)
 
-    act = hk.LayerNorm(
+    act = common_modules.LayerNorm(
         axis=[-1],
         create_scale=True,
         create_offset=True,
@@ -545,14 +551,14 @@ class Attention(hk.Module):
     self.global_config = global_config
     self.output_dim = output_dim
 
-  def __call__(self, q_data, m_data, bias, nonbatched_bias=None):
+  def __call__(self, q_data, m_data, mask, nonbatched_bias=None):
     """Builds Attention module.
 
     Arguments:
       q_data: A tensor of queries, shape [batch_size, N_queries, q_channels].
       m_data: A tensor of memories from which the keys and values are
         projected, shape [batch_size, N_keys, m_channels].
-      bias: A bias for the attention, shape [batch_size, N_queries, N_keys].
+      mask: A mask for the attention, shape [batch_size, N_queries, N_keys].
       nonbatched_bias: Shared bias, shape [N_queries, N_keys].
 
     Returns:
@@ -569,21 +575,25 @@ class Attention(hk.Module):
 
     q_weights = hk.get_parameter(
         'query_w', shape=(q_data.shape[-1], num_head, key_dim),
+        dtype=q_data.dtype,
         init=glorot_uniform())
     k_weights = hk.get_parameter(
         'key_w', shape=(m_data.shape[-1], num_head, key_dim),
+        dtype=q_data.dtype,
         init=glorot_uniform())
     v_weights = hk.get_parameter(
         'value_w', shape=(m_data.shape[-1], num_head, value_dim),
+        dtype=q_data.dtype,
         init=glorot_uniform())
 
     q = jnp.einsum('bqa,ahc->bqhc', q_data, q_weights) * key_dim**(-0.5)
     k = jnp.einsum('bka,ahc->bkhc', m_data, k_weights)
     v = jnp.einsum('bka,ahc->bkhc', m_data, v_weights)
-    logits = jnp.einsum('bqhc,bkhc->bhqk', q, k) + bias
+    logits = jnp.einsum('bqhc,bkhc->bhqk', q, k)
     if nonbatched_bias is not None:
       logits += jnp.expand_dims(nonbatched_bias, axis=0)
-    weights = jax.nn.softmax(logits)
+    logits = jnp.where(mask, logits, _SOFTMAX_MASK)
+    weights = utils.stable_softmax(logits)
     weighted_avg = jnp.einsum('bhqk,bkhc->bqhc', weights, v)
 
     if self.global_config.zero_init:
@@ -595,10 +605,12 @@ class Attention(hk.Module):
       gating_weights = hk.get_parameter(
           'gating_w',
           shape=(q_data.shape[-1], num_head, value_dim),
+          dtype=q_data.dtype,
           init=hk.initializers.Constant(0.0))
       gating_bias = hk.get_parameter(
           'gating_b',
           shape=(num_head, value_dim),
+          dtype=q_data.dtype,
           init=hk.initializers.Constant(1.0))
 
       gate_values = jnp.einsum('bqc, chv->bqhv', q_data,
@@ -610,9 +622,12 @@ class Attention(hk.Module):
 
     o_weights = hk.get_parameter(
         'output_w', shape=(num_head, value_dim, self.output_dim),
+        dtype=q_data.dtype,
         init=init)
-    o_bias = hk.get_parameter('output_b', shape=(self.output_dim,),
-                              init=hk.initializers.Constant(0.0))
+    o_bias = hk.get_parameter(
+        'output_b', shape=(self.output_dim,),
+        dtype=q_data.dtype,
+        init=hk.initializers.Constant(0.0))
 
     output = jnp.einsum('bqhc,hco->bqo', weighted_avg, o_weights) + o_bias
 
@@ -632,7 +647,7 @@ class GlobalAttention(hk.Module):
     self.global_config = global_config
     self.output_dim = output_dim
 
-  def __call__(self, q_data, m_data, q_mask, bias):
+  def __call__(self, q_data, m_data, q_mask):
     """Builds GlobalAttention module.
 
     Arguments:
@@ -643,7 +658,6 @@ class GlobalAttention(hk.Module):
       q_mask: A binary mask for q_data with zeros in the padded sequence
         elements and ones otherwise. Size [batch_size, N_queries, q_channels]
         (or broadcastable to this shape).
-      bias: A bias for the attention.
 
     Returns:
       A float32 tensor of size [batch_size, N_queries, output_dim].
@@ -659,12 +673,15 @@ class GlobalAttention(hk.Module):
 
     q_weights = hk.get_parameter(
         'query_w', shape=(q_data.shape[-1], num_head, key_dim),
+        dtype=q_data.dtype,
         init=glorot_uniform())
     k_weights = hk.get_parameter(
         'key_w', shape=(m_data.shape[-1], key_dim),
+        dtype=q_data.dtype,
         init=glorot_uniform())
     v_weights = hk.get_parameter(
         'value_w', shape=(m_data.shape[-1], value_dim),
+        dtype=q_data.dtype,
         init=glorot_uniform())
 
     v = jnp.einsum('bka,ac->bkc', m_data, v_weights)
@@ -673,9 +690,10 @@ class GlobalAttention(hk.Module):
 
     q = jnp.einsum('ba,ahc->bhc', q_avg, q_weights) * key_dim**(-0.5)
     k = jnp.einsum('bka,ac->bkc', m_data, k_weights)
-    bias = (1e9 * (q_mask[:, None, :, 0] - 1.))
-    logits = jnp.einsum('bhc,bkc->bhk', q, k) + bias
-    weights = jax.nn.softmax(logits)
+    bias = q_mask[:, None, :, 0]
+    logits = jnp.einsum('bhc,bkc->bhk', q, k)
+    logits = jnp.where(bias, logits, _SOFTMAX_MASK)
+    weights = utils.stable_softmax(logits)
     weighted_avg = jnp.einsum('bhk,bkc->bhc', weights, v)
 
     if self.global_config.zero_init:
@@ -685,18 +703,23 @@ class GlobalAttention(hk.Module):
 
     o_weights = hk.get_parameter(
         'output_w', shape=(num_head, value_dim, self.output_dim),
+        dtype=q_data.dtype,
         init=init)
-    o_bias = hk.get_parameter('output_b', shape=(self.output_dim,),
-                              init=hk.initializers.Constant(0.0))
+    o_bias = hk.get_parameter(
+        'output_b', shape=(self.output_dim,),
+        dtype=q_data.dtype,
+        init=hk.initializers.Constant(0.0))
 
     if self.config.gating:
       gating_weights = hk.get_parameter(
           'gating_w',
           shape=(q_data.shape[-1], num_head, value_dim),
+          dtype=q_data.dtype,
           init=hk.initializers.Constant(0.0))
       gating_bias = hk.get_parameter(
           'gating_b',
           shape=(num_head, value_dim),
+          dtype=q_data.dtype,
           init=hk.initializers.Constant(1.0))
 
       gate_values = jnp.einsum('bqc, chv->bqhv', q_data, gating_weights)
@@ -743,14 +766,14 @@ class MSARowAttentionWithPairBias(hk.Module):
     assert len(msa_mask.shape) == 2
     assert c.orientation == 'per_row'
 
-    bias = (1e9 * (msa_mask - 1.))[:, None, None, :]
-    assert len(bias.shape) == 4
+    mask = msa_mask[:, None, None, :]
+    assert len(mask.shape) == 4
 
-    msa_act = hk.LayerNorm(
+    msa_act = common_modules.LayerNorm(
         axis=[-1], create_scale=True, create_offset=True, name='query_norm')(
             msa_act)
 
-    pair_act = hk.LayerNorm(
+    pair_act = common_modules.LayerNorm(
         axis=[-1],
         create_scale=True,
         create_offset=True,
@@ -761,6 +784,7 @@ class MSARowAttentionWithPairBias(hk.Module):
     weights = hk.get_parameter(
         'feat_2d_weights',
         shape=(pair_act.shape[-1], c.num_head),
+        dtype=msa_act.dtype,
         init=hk.initializers.RandomNormal(stddev=init_factor))
     nonbatched_bias = jnp.einsum('qkc,ch->hqk', pair_act, weights)
 
@@ -769,7 +793,7 @@ class MSARowAttentionWithPairBias(hk.Module):
     msa_act = mapping.inference_subbatch(
         attn_mod,
         self.global_config.subbatch_size,
-        batched_args=[msa_act, msa_act, bias],
+        batched_args=[msa_act, msa_act, mask],
         nonbatched_args=[nonbatched_bias],
         low_memory=not is_training)
 
@@ -810,10 +834,10 @@ class MSAColumnAttention(hk.Module):
     msa_act = jnp.swapaxes(msa_act, -2, -3)
     msa_mask = jnp.swapaxes(msa_mask, -1, -2)
 
-    bias = (1e9 * (msa_mask - 1.))[:, None, None, :]
-    assert len(bias.shape) == 4
+    mask = msa_mask[:, None, None, :]
+    assert len(mask.shape) == 4
 
-    msa_act = hk.LayerNorm(
+    msa_act = common_modules.LayerNorm(
         axis=[-1], create_scale=True, create_offset=True, name='query_norm')(
             msa_act)
 
@@ -822,7 +846,7 @@ class MSAColumnAttention(hk.Module):
     msa_act = mapping.inference_subbatch(
         attn_mod,
         self.global_config.subbatch_size,
-        batched_args=[msa_act, msa_act, bias],
+        batched_args=[msa_act, msa_act, mask],
         nonbatched_args=[],
         low_memory=not is_training)
 
@@ -865,10 +889,7 @@ class MSAColumnGlobalAttention(hk.Module):
     msa_act = jnp.swapaxes(msa_act, -2, -3)
     msa_mask = jnp.swapaxes(msa_mask, -1, -2)
 
-    bias = (1e9 * (msa_mask - 1.))[:, None, None, :]
-    assert len(bias.shape) == 4
-
-    msa_act = hk.LayerNorm(
+    msa_act = common_modules.LayerNorm(
         axis=[-1], create_scale=True, create_offset=True, name='query_norm')(
             msa_act)
 
@@ -880,7 +901,7 @@ class MSAColumnGlobalAttention(hk.Module):
     msa_act = mapping.inference_subbatch(
         attn_mod,
         self.global_config.subbatch_size,
-        batched_args=[msa_act, msa_act, msa_mask, bias],
+        batched_args=[msa_act, msa_act, msa_mask],
         nonbatched_args=[],
         low_memory=not is_training)
 
@@ -922,10 +943,10 @@ class TriangleAttention(hk.Module):
       pair_act = jnp.swapaxes(pair_act, -2, -3)
       pair_mask = jnp.swapaxes(pair_mask, -1, -2)
 
-    bias = (1e9 * (pair_mask - 1.))[:, None, None, :]
-    assert len(bias.shape) == 4
+    mask = pair_mask[:, None, None, :]
+    assert len(mask.shape) == 4
 
-    pair_act = hk.LayerNorm(
+    pair_act = common_modules.LayerNorm(
         axis=[-1], create_scale=True, create_offset=True, name='query_norm')(
             pair_act)
 
@@ -933,6 +954,7 @@ class TriangleAttention(hk.Module):
     weights = hk.get_parameter(
         'feat_2d_weights',
         shape=(pair_act.shape[-1], c.num_head),
+        dtype=pair_act.dtype,
         init=hk.initializers.RandomNormal(stddev=init_factor))
     nonbatched_bias = jnp.einsum('qkc,ch->hqk', pair_act, weights)
 
@@ -941,7 +963,7 @@ class TriangleAttention(hk.Module):
     pair_act = mapping.inference_subbatch(
         attn_mod,
         self.global_config.subbatch_size,
-        batched_args=[pair_act, pair_act, bias],
+        batched_args=[pair_act, pair_act, mask],
         nonbatched_args=[nonbatched_bias],
         low_memory=not is_training)
 
@@ -1030,7 +1052,7 @@ class PredictedLDDTHead(hk.Module):
     """
     act = representations['structure_module']
 
-    act = hk.LayerNorm(
+    act = common_modules.LayerNorm(
         axis=[-1],
         create_scale=True,
         create_offset=True,
@@ -1252,6 +1274,19 @@ class ExperimentallyResolvedHead(hk.Module):
     return output
 
 
+def _layer_norm(axis=-1, name='layer_norm'):
+  return common_modules.LayerNorm(
+      axis=axis,
+      create_scale=True,
+      create_offset=True,
+      eps=1e-5,
+      use_fast_variance=True,
+      scale_init=hk.initializers.Constant(1.),
+      offset_init=hk.initializers.Constant(0.),
+      param_axis=axis,
+      name=name)
+
+
 class TriangleMultiplication(hk.Module):
   """Triangle multiplication layer ("outgoing" or "incoming").
 
@@ -1264,25 +1299,34 @@ class TriangleMultiplication(hk.Module):
     self.config = config
     self.global_config = global_config
 
-  def __call__(self, act, mask, is_training=True):
+  def __call__(self, left_act, left_mask, is_training=True):
     """Builds TriangleMultiplication module.
 
     Arguments:
-      act: Pair activations, shape [N_res, N_res, c_z]
-      mask: Pair mask, shape [N_res, N_res].
+      left_act: Pair activations, shape [N_res, N_res, c_z]
+      left_mask: Pair mask, shape [N_res, N_res].
       is_training: Whether the module is in training mode.
 
     Returns:
-      Outputs, same shape/type as act.
+      Outputs, same shape/type as left_act.
     """
     del is_training
+
+    if self.config.fuse_projection_weights:
+      return self._fused_triangle_multiplication(left_act, left_mask)
+    else:
+      return self._triangle_multiplication(left_act, left_mask)
+
+  @hk.transparent
+  def _triangle_multiplication(self, left_act, left_mask):
+    """Implementation of TriangleMultiplication used in AF2 and AF-M<2.3."""
     c = self.config
     gc = self.global_config
 
-    mask = mask[..., None]
+    mask = left_mask[..., None]
 
-    act = hk.LayerNorm(axis=[-1], create_scale=True, create_offset=True,
-                       name='layer_norm_input')(act)
+    act = common_modules.LayerNorm(axis=[-1], create_scale=True, create_offset=True,
+                       name='layer_norm_input')(left_act)
     input_act = act
 
     left_projection = common_modules.Linear(
@@ -1318,7 +1362,7 @@ class TriangleMultiplication(hk.Module):
     #   b = left_proj_act and a = right_proj_act
     act = jnp.einsum(c.equation, left_proj_act, right_proj_act)
 
-    act = hk.LayerNorm(
+    act = common_modules.LayerNorm(
         axis=[-1],
         create_scale=True,
         create_offset=True,
@@ -1338,6 +1382,50 @@ class TriangleMultiplication(hk.Module):
         initializer=utils.final_init(gc),
         name='gating_linear')(input_act))
     act *= gate_values
+
+    return act
+
+  @hk.transparent
+  def _fused_triangle_multiplication(self, left_act, left_mask):
+    """TriangleMultiplication with fused projection weights."""
+    mask = left_mask[..., None]
+    c = self.config
+    gc = self.global_config
+
+    left_act = _layer_norm(axis=-1, name='left_norm_input')(left_act)
+
+    # Both left and right projections are fused into projection.
+    projection = common_modules.Linear(
+        2*c.num_intermediate_channel, name='projection')
+    proj_act = mask * projection(left_act)
+
+    # Both left + right gate are fused into gate_values.
+    gate_values = common_modules.Linear(
+        2 * c.num_intermediate_channel,
+        name='gate',
+        bias_init=1.,
+        initializer=utils.final_init(gc))(left_act)
+    proj_act *= jax.nn.sigmoid(gate_values)
+
+    left_proj_act = proj_act[:, :, :c.num_intermediate_channel]
+    right_proj_act = proj_act[:, :, c.num_intermediate_channel:]
+    act = jnp.einsum(c.equation, left_proj_act, right_proj_act)
+
+    act = _layer_norm(axis=-1, name='center_norm')(act)
+
+    output_channel = int(left_act.shape[-1])
+
+    act = common_modules.Linear(
+        output_channel,
+        initializer=utils.final_init(gc),
+        name='output_projection')(act)
+
+    gate_values = common_modules.Linear(
+        output_channel,
+        bias_init=1.,
+        initializer=utils.final_init(gc),
+        name='gating_linear')(left_act)
+    act *= jax.nn.sigmoid(gate_values)
 
     return act
 
@@ -1447,7 +1535,7 @@ class OuterProductMean(hk.Module):
     c = self.config
 
     mask = mask[..., None]
-    act = hk.LayerNorm([-1], True, True, name='layer_norm_input')(act)
+    act = common_modules.LayerNorm([-1], True, True, name='layer_norm_input')(act)
 
     left_act = mask * common_modules.Linear(
         c.num_outer_channel,
@@ -1470,9 +1558,11 @@ class OuterProductMean(hk.Module):
         'output_w',
         shape=(c.num_outer_channel, c.num_outer_channel,
                self.num_output_channel),
+        dtype=act.dtype,
         init=init_w)
     output_b = hk.get_parameter(
         'output_b', shape=(self.num_output_channel,),
+        dtype=act.dtype,
         init=hk.initializers.Constant(0.0))
 
     def compute_chunk(left_act):
@@ -1730,7 +1820,7 @@ class EmbeddingsAndEvoformer(hk.Module):
     # Inject previous outputs for recycling.
     # Jumper et al. (2021) Suppl. Alg. 2 "Inference" line 6
     # Jumper et al. (2021) Suppl. Alg. 32 "RecyclingEmbedder"
-    if c.recycle_pos and 'prev_pos' in batch:
+    if c.recycle_pos:
       prev_pseudo_beta = pseudo_beta_fn(
           batch['aatype'], batch['prev_pos'], None)
       dgram = dgram_from_positions(prev_pseudo_beta, **self.config.prev_pos)
@@ -1739,20 +1829,20 @@ class EmbeddingsAndEvoformer(hk.Module):
               dgram)
 
     if c.recycle_features:
-      if 'prev_msa_first_row' in batch:
-        prev_msa_first_row = hk.LayerNorm([-1],
-                                          True,
-                                          True,
-                                          name='prev_msa_first_row_norm')(
-                                              batch['prev_msa_first_row'])
-        msa_activations = msa_activations.at[0].add(prev_msa_first_row)
+      prev_msa_first_row = common_modules.LayerNorm(
+          axis=[-1],
+          create_scale=True,
+          create_offset=True,
+          name='prev_msa_first_row_norm')(
+              batch['prev_msa_first_row'])
+      msa_activations = msa_activations.at[0].add(prev_msa_first_row)
 
-      if 'prev_pair' in batch:
-        pair_activations += hk.LayerNorm([-1],
-                                         True,
-                                         True,
-                                         name='prev_pair_norm')(
-                                             batch['prev_pair'])
+      pair_activations += common_modules.LayerNorm(
+          axis=[-1],
+          create_scale=True,
+          create_offset=True,
+          name='prev_pair_norm')(
+              batch['prev_pair'])
 
     # Relative position encoding.
     # Jumper et al. (2021) Suppl. Alg. 4 "relpos"
@@ -2021,7 +2111,7 @@ class SingleTemplateEmbedding(hk.Module):
         self.config.template_pair_stack, self.global_config)(
             act, mask_2d, is_training)
 
-    act = hk.LayerNorm([-1], True, True, name='output_layer_norm')(act)
+    act = common_modules.LayerNorm([-1], True, True, name='output_layer_norm')(act)
     return act
 
 
@@ -2083,11 +2173,11 @@ class TemplateEmbedding(hk.Module):
         jnp.transpose(template_pair_representation, [1, 2, 0, 3]),
         [num_res * num_res, num_templates, num_channels])
 
-    bias = (1e9 * (template_mask[None, None, None, :] - 1.))
+    mask = template_mask[None, None, None, :]
 
     template_pointwise_attention_module = Attention(
         self.config.attention, self.global_config, query_num_channels)
-    nonbatched_args = [bias]
+    nonbatched_args = [mask]
     batched_args = [flat_query, flat_templates]
 
     embedding = mapping.inference_subbatch(

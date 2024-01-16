@@ -186,7 +186,7 @@ class PointProjection(hk.Module):
 
 
 class InvariantPointAttention(hk.Module):
-  """Covariant attention module.
+  """Invariant point attention module.
 
   The high-level idea is that this attention module works over a set of points
   and associated orientations in 3D space (e.g. protein residues).
@@ -427,7 +427,7 @@ class FoldIteration(hk.Module):
     safe_key, *sub_keys = safe_key.split(3)
     sub_keys = iter(sub_keys)
     act = safe_dropout_fn(act, next(sub_keys))
-    act = hk.LayerNorm(
+    act = common_modules.LayerNorm(
         axis=-1,
         create_scale=True,
         create_offset=True,
@@ -448,7 +448,7 @@ class FoldIteration(hk.Module):
         act = jax.nn.relu(act)
     act += input_act
     act = safe_dropout_fn(act, next(sub_keys))
-    act = hk.LayerNorm(
+    act = common_modules.LayerNorm(
         axis=-1,
         create_scale=True,
         create_offset=True,
@@ -500,7 +500,7 @@ def generate_monomer_rigids(representations: Mapping[str, jnp.ndarray],
   """
   c = config
   sequence_mask = batch['seq_mask'][:, None]
-  act = hk.LayerNorm(
+  act = common_modules.LayerNorm(
       axis=-1, create_scale=True, create_offset=True, name='single_layer_norm')(
           representations['single'])
 
@@ -523,7 +523,7 @@ def generate_monomer_rigids(representations: Mapping[str, jnp.ndarray],
           rigid
   }
 
-  act_2d = hk.LayerNorm(
+  act_2d = common_modules.LayerNorm(
       axis=-1,
       create_scale=True,
       create_offset=True,
@@ -546,7 +546,7 @@ def generate_monomer_rigids(representations: Mapping[str, jnp.ndarray],
         )
     outputs.append(output)
 
-  output = jax.tree_multimap(lambda *x: jnp.stack(x), *outputs)
+  output = jax.tree_map(lambda *x: jnp.stack(x), *outputs)
   # Pass along for LDDT-Head.
   output['act'] = activations['act']
 
@@ -664,7 +664,8 @@ class StructureModule(hk.Module):
         residue_index=residue_index,
         mask=pred_mask,
         pred_positions=pred_positions,
-        config=self.config)
+        config=self.config,
+        asym_id=batch['asym_id'])
 
     sidechains = value['sidechains']
 
@@ -774,7 +775,7 @@ def compute_atom14_gt(
   gt_mask = (1. - use_alt) * gt_mask + use_alt * alt_gt_mask
   gt_positions = (1. - use_alt) * gt_positions + use_alt * alt_gt_positions
 
-  return gt_positions, alt_gt_mask, alt_naming_is_better
+  return gt_positions, gt_mask, alt_naming_is_better
 
 
 def backbone_loss(gt_rigid: geometry.Rigid3Array,
@@ -788,7 +789,7 @@ def backbone_loss(gt_rigid: geometry.Rigid3Array,
   loss_fn = functools.partial(
       all_atom_multimer.frame_aligned_point_error,
       l1_clamp_distance=config.atom_clamp_distance,
-      loss_unit_distance=config.loss_unit_distance)
+      length_scale=config.loss_unit_distance)
 
   loss_fn = jax.vmap(loss_fn, (0, None, None, 0, None, None, None))
   fape = loss_fn(target_rigid, gt_rigid, gt_frames_mask,
@@ -822,7 +823,7 @@ def compute_frames(
   alt_gt_frames = frames_batch['rigidgroups_alt_gt_frames']
   use_alt = use_alt[:, None]
 
-  renamed_gt_frames = jax.tree_multimap(
+  renamed_gt_frames = jax.tree_map(
       lambda x, y: (1. - use_alt) * x + use_alt * y, gt_frames, alt_gt_frames)
 
   return renamed_gt_frames, frames_batch['rigidgroups_gt_exists']
@@ -890,7 +891,8 @@ def find_structural_violations(
     residue_index: jnp.ndarray,
     mask: jnp.ndarray,
     pred_positions: geometry.Vec3Array,  # (N, 14)
-    config: ml_collections.ConfigDict
+    config: ml_collections.ConfigDict,
+    asym_id: jnp.ndarray,
     ) -> Dict[str, Any]:
   """Computes several checks for structural Violations."""
 
@@ -921,7 +923,8 @@ def find_structural_violations(
       atom_radius=atom_radius,
       residue_index=residue_index,
       overlap_tolerance_soft=config.clash_overlap_tolerance,
-      overlap_tolerance_hard=config.clash_overlap_tolerance)
+      overlap_tolerance_hard=config.clash_overlap_tolerance,
+      asym_id=asym_id)
 
   # Compute all within-residue violations (clashes,
   # bond length and angle violations).
@@ -1157,4 +1160,3 @@ class MultiRigidSidechain(hk.Module):
         'frames': all_frames_to_global,  # geometry.Rigid3Array (N, 8)
     })
     return outputs
-

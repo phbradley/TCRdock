@@ -15,6 +15,7 @@
 """A collection of JAX utility functions for use in protein folding."""
 
 import collections
+import contextlib
 import functools
 import numbers
 from typing import Mapping
@@ -23,6 +24,41 @@ import haiku as hk
 import jax
 import jax.numpy as jnp
 import numpy as np
+
+
+def stable_softmax(logits: jax.Array) -> jax.Array:
+  """Numerically stable softmax for (potential) bfloat 16."""
+  if logits.dtype == jnp.float32:
+    output = jax.nn.softmax(logits)
+  elif logits.dtype == jnp.bfloat16:
+    # Need to explicitly do softmax in float32 to avoid numerical issues
+    # with large negatives. Large negatives can occur if trying to mask
+    # by adding on large negative logits so that things softmax to zero.
+    output = jax.nn.softmax(logits.astype(jnp.float32)).astype(jnp.bfloat16)
+  else:
+    raise ValueError(f'Unexpected input dtype {logits.dtype}')
+  return output
+
+
+def bfloat16_creator(next_creator, shape, dtype, init, context):
+  """Creates float32 variables when bfloat16 is requested."""
+  if context.original_dtype == jnp.bfloat16:
+    dtype = jnp.float32
+  return next_creator(shape, dtype, init)
+
+
+def bfloat16_getter(next_getter, value, context):
+  """Casts float32 to bfloat16 when bfloat16 was originally requested."""
+  if context.original_dtype == jnp.bfloat16:
+    assert value.dtype == jnp.float32
+    value = value.astype(jnp.bfloat16)
+  return next_getter(value)
+
+
+@contextlib.contextmanager
+def bfloat16_context():
+  with hk.custom_creator(bfloat16_creator), hk.custom_getter(bfloat16_getter):
+    yield
 
 
 def final_init(config):
@@ -34,7 +70,7 @@ def final_init(config):
 
 def batched_gather(params, indices, axis=0, batch_dims=0):
   """Implements a JAX equivalent of `tf.gather` with `axis` and `batch_dims`."""
-  take_fn = lambda p, i: jnp.take(p, i, axis=axis)
+  take_fn = lambda p, i: jnp.take(p, i, axis=axis, mode='clip')
   for _ in range(batch_dims):
     take_fn = jax.vmap(take_fn)
   return take_fn(params, indices)
@@ -54,8 +90,8 @@ def mask_mean(mask, value, axis=None, drop_mask_channel=False, eps=1e-10):
     axis = [axis]
   elif axis is None:
     axis = list(range(len(mask_shape)))
-  # assert isinstance(axis, collections.Iterable), (
-  #     'axis needs to be either an iterable, integer or "None"')
+  assert isinstance(axis, collections.abc.Iterable), (
+      'axis needs to be either an iterable, integer or "None"')
 
   broadcast_factor = 1.
   for axis_ in axis:
@@ -124,8 +160,14 @@ def padding_consistent_rng(f):
     return jax.vmap(functools.partial(grid_keys, shape=shape[1:]))(new_keys)
 
   def inner(key, shape, **kwargs):
+    keys = grid_keys(key, shape)
+    signature = (
+        '()->()'
+        if isinstance(keys, jax.random.PRNGKeyArray)
+        else '(2)->()'
+    )
     return jnp.vectorize(
-        lambda key: f(key, shape=(), **kwargs),
-        signature='(2)->()')(
-            grid_keys(key, shape))
+        functools.partial(f, shape=(), **kwargs), signature=signature
+    )(keys)
+
   return inner

@@ -13,7 +13,7 @@
 # limitations under the License.
 """Ops for all atom representations."""
 
-from typing import Dict, Text
+from typing import Dict, Optional
 
 from alphafold.common import residue_constants
 from alphafold.model import geometry
@@ -276,7 +276,7 @@ def atom37_to_frames(
     aatype: jnp.ndarray,  # (...)
     all_atom_positions: geometry.Vec3Array,  # (..., 37)
     all_atom_mask: jnp.ndarray,  # (..., 37)
-) -> Dict[Text, jnp.ndarray]:
+) -> Dict[str, jnp.ndarray]:
   """Computes the frames for the up to 8 rigid groups for each residue."""
   # 0: 'backbone group',
   # 1: 'pre-omega-group', (empty)
@@ -426,7 +426,7 @@ def torsion_angles_to_frames(
   chi3_frame_to_backb = chi2_frame_to_backb @ all_frames[:, 6]
   chi4_frame_to_backb = chi3_frame_to_backb @ all_frames[:, 7]
 
-  all_frames_to_backb = jax.tree_multimap(
+  all_frames_to_backb = jax.tree_map(
       lambda *x: jnp.concatenate(x, axis=-1), all_frames[:, 0:5],
       chi2_frame_to_backb[:, None], chi3_frame_to_backb[:, None],
       chi4_frame_to_backb[:, None])
@@ -498,7 +498,7 @@ def between_residue_bond_loss(
     residue_index: jnp.ndarray,  # (N)
     aatype: jnp.ndarray,  # (N)
     tolerance_factor_soft=12.0,
-    tolerance_factor_hard=12.0) -> Dict[Text, jnp.ndarray]:
+    tolerance_factor_hard=12.0) -> Dict[str, jnp.ndarray]:
   """Flat-bottom loss to penalize structural violations between residues."""
   assert len(pred_atom_positions.shape) == 2
   assert len(pred_atom_mask.shape) == 2
@@ -598,8 +598,9 @@ def between_residue_clash_loss(
     atom_exists: jnp.ndarray,  # (N, 14)
     atom_radius: jnp.ndarray,  # (N, 14)
     residue_index: jnp.ndarray,  # (N)
+    asym_id: jnp.ndarray,  # (N)
     overlap_tolerance_soft=1.5,
-    overlap_tolerance_hard=1.5) -> Dict[Text, jnp.ndarray]:
+    overlap_tolerance_hard=1.5) -> Dict[str, jnp.ndarray]:
   """Loss to penalize steric clashes between residues."""
   assert len(pred_positions.shape) == 2
   assert len(atom_exists.shape) == 2
@@ -624,8 +625,9 @@ def between_residue_clash_loss(
   # Backbone C--N bond between subsequent residues is no clash.
   c_one_hot = jax.nn.one_hot(2, num_classes=14)
   n_one_hot = jax.nn.one_hot(0, num_classes=14)
-  neighbour_mask = ((residue_index[:, None, None, None] +
-                     1) == residue_index[None, :, None, None])
+  neighbour_mask = ((residue_index[:, None] + 1) == residue_index[None, :])
+  neighbour_mask &= (asym_id[:, None] == asym_id[None, :])
+  neighbour_mask = neighbour_mask[..., None, None]
   c_n_bonds = neighbour_mask * c_one_hot[None, None, :,
                                          None] * n_one_hot[None, None, None, :]
   dists_mask *= (1. - c_n_bonds)
@@ -680,7 +682,7 @@ def within_residue_violations(
     dists_lower_bound: jnp.ndarray,  # (N, 14, 14)
     dists_upper_bound: jnp.ndarray,  # (N, 14, 14)
     tighten_bounds_for_loss=0.0,
-) -> Dict[Text, jnp.ndarray]:
+) -> Dict[str, jnp.ndarray]:
   """Find within-residue violations."""
   assert len(pred_positions.shape) == 2
   assert len(atom_exists.shape) == 2
@@ -787,7 +789,7 @@ def frame_aligned_point_error(
     pred_positions: geometry.Vec3Array,  # shape (num_positions)
     target_positions: geometry.Vec3Array,  # shape (num_positions)
     positions_mask: jnp.ndarray,  # shape (num_positions)
-    pair_mask: jnp.ndarray,  # shape (num_frames, num_posiitons)
+    pair_mask: Optional[jnp.ndarray],  # shape (num_frames, num_posiitons)
     l1_clamp_distance: float,
     length_scale=20.,
     epsilon=1e-4) -> jnp.ndarray:  # shape ()
