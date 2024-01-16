@@ -37,8 +37,10 @@ def make_data_config(
   if cfg.common.use_templates:
     feature_names += cfg.common.template_features
 
-  with cfg.unlocked():
-    cfg.eval.crop_size = num_res
+  # change to make it easier to run lots of targets
+  # assumes we are setting crop_size earlier
+  #with cfg.unlocked():
+  #  cfg.eval.crop_size = num_res
 
   return cfg, feature_names
 
