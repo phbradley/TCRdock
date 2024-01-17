@@ -6,6 +6,7 @@ dm-tree==0.1.8
 docker==5.0.0
 immutabledict==2.0.0
 jax==0.4.14
+https://storage.googleapis.com/jax-releases/cuda12/jaxlib-0.4.14+cuda12.cudnn89-cp310-cp310-manylinux2014_x86_64.whl
 ml-collections==0.1.0
 numpy==1.24.3
 pandas==2.0.3
