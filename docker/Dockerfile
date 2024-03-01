@@ -1,21 +1,10 @@
-################## BASE IMAGE ######################
 FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04
 
-################## METADATA ######################
-LABEL base_image="nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04"
-LABEL version="1"
-LABEL software="TCRdock"
-LABEL software.version="1.0.0"
-LABEL software.author="Philip Bradley <pbradley@fredhutch.org>"
-LABEL about.summary="python tools for TCR:peptide-MHC modeling and analysis"
-LABEL about.home="https://github.com/phbradley/TCRdock"
-LABEL about.documentation="https://github.com/phbradley/TCRdock"
-LABEL about.license_file="https://github.com/phbradley/TCRdock"
-LABEL about.license="MIT (Apache-2.0 for original Alphafold)"
-LABEL about.tags="Structure Prediction:Immunology"
-MAINTAINER Philip Bradley <pbradley@fredhutch.org>
+LABEL authors="Elias Ball" \
+    title="TCRdock" \
+    Version="1.0.0" \
+    description="Docker image containing all dependencies to run TCRdock (https://github.com/phbradley/TCRdock, created by Philip Bradley)"
 
-################## INSTALLATION ######################
 USER root
 
 # Install system dependencies
@@ -25,10 +14,7 @@ RUN apt-get update && \
     git \
     wget
 
-# Create non-root user
-RUN useradd -ms /bin/bash tcrdockuser
-USER tcrdockuser
-WORKDIR /home/tcrdockuser/
+WORKDIR /opt
 
 # Clone TCRdock
 RUN git clone https://github.com/phbradley/TCRdock.git && \
@@ -37,12 +23,12 @@ RUN git clone https://github.com/phbradley/TCRdock.git && \
 # TODO remove branching and do release instead
 
 # Install conda
-RUN mkdir -p ~/miniconda3 && \
-    wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O ~/miniconda3/miniconda.sh && \
-    bash ~/miniconda3/miniconda.sh -b -u -p ~/miniconda3 && \
-    rm -rf ~/miniconda3/miniconda.sh
-ENV PATH="/home/tcrdockuser/miniconda3/bin:$PATH"
-ENV LD_LIBRARY_PATH="/home/tcrdockuser/miniconda3/lib:$LD_LIBRARY_PATH"
+RUN mkdir -p /opt/miniconda3 && \
+    wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O /opt/miniconda3/miniconda.sh && \
+    bash /opt/miniconda3/miniconda.sh -b -u -p /opt/miniconda3 && \
+    rm -rf /opt/miniconda3/miniconda.sh
+ENV PATH="/opt/miniconda3/bin:$PATH"
+ENV LD_LIBRARY_PATH="/opt/miniconda3/lib:$LD_LIBRARY_PATH"
 
 # Install conda dependencies
 RUN conda install -y -c conda-forge \
@@ -70,12 +56,28 @@ RUN pip install --upgrade --no-cache-dir \
     scipy==1.11.1 \
     tensorflow-cpu==2.13.0
 
+# Temporarily allow write to /opt/TCRdock for all users
+RUN chmod a+rw -R /opt/TCRdock
+
+# Create and switch to non-root user
+RUN useradd -ms /bin/bash tcrdockuser
+USER tcrdockuser
+
 # Download network parameters and BLAST
-WORKDIR /home/tcrdockuser/TCRdock
+WORKDIR /opt/TCRdock
 RUN mkdir -p alphafold_params/params && \
     wget -O 'alphafold_params/params/params_model_2_ptm.npz' 'https://www.dropbox.com/s/e3uz9mwxkmmv35z/params_model_2_ptm.npz' && \
     wget -O 'alphafold_params/params/tcrpmhc_run4_af_mhc_params_891.pkl' 'https://www.dropbox.com/s/jph8v1mfni1q4y8/tcrpmhc_run4_af_mhc_params_891.pkl' && \
     python download_blast.py
+
+# Set correct access permissions to all users
+USER root
+RUN chown -R root:root /opt/TCRdock && \
+    chmod a+r -R /opt/TCRdock && \
+    chmod a-w -R /opt/TCRdock
+
+# Switch back to non-root user
+USER tcrdockuser
 
 # Create data directory
 RUN mkdir /home/tcrdockuser/data
