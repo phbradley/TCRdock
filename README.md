@@ -5,6 +5,10 @@ Python tools for TCR:peptide-MHC modeling and analysis
 Described in the manuscript: "Structure-based prediction of T cell
 receptor:peptide-MHC interactions" by Philip Bradley. bioRXiv link: 
 
+***[NEW 2024-03-06]*** The AlphaFold code was updated to alphafold v2.3.2
+from alphafold repo commit f715f016d875e2fd8515457af2b12277a716b9b0
+The old code can be found in the releases section under v1.0.0
+
 ***[NEW 2024-01-17]*** The [Google colab notebook](tcrdock_colab_pipeline_v1.ipynb) was
 temporarily broken due to an update of the colab GPU libraries (CUDA/CUDNN). I just
 checked in an updated version that should be working again. This is a short-term patch
