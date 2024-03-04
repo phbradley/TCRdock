@@ -2,7 +2,7 @@ FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04
 
 LABEL authors="Elias Ball" \
     title="TCRdock" \
-    Version="1.0.0" \
+    Version="2.0.0" \
     description="Docker image containing all dependencies to run TCRdock (https://github.com/phbradley/TCRdock, created by Philip Bradley)"
 
 USER root
@@ -17,10 +17,7 @@ RUN apt-get update && \
 WORKDIR /opt
 
 # Clone TCRdock
-RUN git clone https://github.com/phbradley/TCRdock.git && \
-    cd TCRdock && \
-    git checkout af232_update
-# TODO remove branching and do release instead
+RUN git clone --depth 1 --branch v2.0.0 https://github.com/phbradley/TCRdock.git
 
 # Install conda
 RUN mkdir -p /opt/miniconda3 && \
@@ -63,7 +60,7 @@ RUN chmod a+rw -R /opt/TCRdock
 RUN useradd -ms /bin/bash tcrdockuser
 USER tcrdockuser
 
-# Download network parameters and BLAST
+# Download model parameters and BLAST
 WORKDIR /opt/TCRdock
 RUN mkdir -p alphafold_params/params && \
     wget -O 'alphafold_params/params/params_model_2_ptm.npz' 'https://www.dropbox.com/s/e3uz9mwxkmmv35z/params_model_2_ptm.npz' && \
