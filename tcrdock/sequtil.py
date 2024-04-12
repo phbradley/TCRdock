@@ -6,7 +6,7 @@ from os.path import exists
 from .tcrdist.all_genes import all_genes
 from .tcrdist.amino_acids import amino_acids
 from Bio import pairwise2
-from Bio.SubsMat import MatrixInfo as matlist
+from Bio.Align import substitution_matrices
 from Bio.pairwise2 import format_alignment
 from .util import path_to_db
 from . import docking_geometry
@@ -190,7 +190,7 @@ def blosum_align(
     ''' return 0-indexed dictionary mapping from seq1 to seq2 positions
     '''
 
-    scorematrix = matlist.blosum62
+    scorematrix = dict(substitution_matrices.load("BLOSUM62"))
 
     if global_align:
         alignments = pairwise2.align.globalds(
